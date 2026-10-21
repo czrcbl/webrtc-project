@@ -1,0 +1,17 @@
+repos/
+!repos/README.md
+NOTES.md
+.cache/
+.ai-jail
+
+.venv/
+__pycache__/
+*.py[cod]
+
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.ty_cache/
+
+.claude/
+# .claude/settings.local.json

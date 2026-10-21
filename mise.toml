@@ -1,0 +1,53 @@
+[tools]
+go = "1.27.2"
+mage = "1.17.2"
+pnpm = "12.13.0"
+python = "3.14"
+tmux = "3.7c"
+uv = "0.13.0"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+_.path = "./repos/lk_2.19.1_linux_amd64"          # add lk cli to path
+ROOM = "default"                                  # Room name used on experiments
+TESTER_PARTICIPANT_A = "Cezar"
+TESTER_PARTICIPANT_B = "Razec"
+LIVEKIT_URL = "http://localhost:7880"
+LIVEKIT_API_KEY = "devkey"
+LIVEKIT_API_SECRET = "secret"
+WHISPER_MODEL = "small"                           # Better larger version: "large-v3-turbo"
+WHISPER_SAMPLE_RATE = 16_000
+# WHISPER_COMPUTE_TYPE=float16           
+WHISPER_COMPUTE_TYPE = "int8_float16"            # Reduce memory
+STT_WS_URL = "ws://localhost:8000/ws/transcribe"
+STT_LANGUAGE = "pt"                              # empty -> auto-detect; set "en" / "pt" to pin
+
+[tasks.bootstrap]
+description = "Prepare repo for development"
+run = """
+    git clone git@github.com:czrcbl/meet.git repos/meet \
+    git clone https://github.com/livekit/livekit repos/livekit
+"""
+
+
+[tasks.server-dev]
+description = "Run Livekit Server"
+run = "./repos/livekit/bin/livekit-server --dev"
+
+[tasks.meet-dev]
+description = "Run Meet server"
+run = "cd repos/meet && pnpm dev"
+
+[tasks.stt-server]
+run = """
+  LD_LIBRARY_PATH="$(python -c 'import importlib; print(":".join(list(importlib.import_module(m).__path__)[0] for m in ("nvidia.cublas.lib","nvidia.cudnn.lib")))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  WHISPER_DEVICE=cuda uv run python -m uvicorn services.stt_server.server:app --host 0.0.0.0 --port 8000 --reload
+"""
+
+[tasks.transcriber]
+description = "Run the room transcriber"
+run = "uv run services/room-connector/server.py"
+
+[tasks.transcriber-agent]
+description = "Run the room transcriber agent"
+run = "uv run services/room-connector/agent.py dev"

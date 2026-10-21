@@ -1,0 +1,30 @@
+[project]
+name = "webrtc-project"
+version = "0.1.0"
+description = "Monorepo for the WrbRTC with transcription demo"
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.uv]
+package = false # the root is a virtual workspace root, not a distribution
+
+[tool.uv.workspace]
+members = ["packages/*", "services/*"]
+
+# [tool.uv.sources]
+# wrtc-common = { workspace = true }
+
+[dependency-groups]
+dev = ["ruff>=0.17.0", "ty>=0.0.87", "pytest>=8.3", "pytest-asyncio>=0.24"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = ["repos", "docs/examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,26 @@
+[project]
+name = "room-connector"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "livekit-agents>=1.8.6",
+    "livekit>=1.1.20",
+    "pydantic>=2.14.1",
+    "websockets>=17.2",
+    # "wrtc-common",
+]
+
+[tool.uv]
+package = false
+
+# Reference for migrating to packages later. 
+
+# [project.scripts]
+# room-connector = "room_connector.__main__:main"
+
+# [build-system]
+# requires = ["uv_build>=0.13,<0.14"]
+# build-backend = "uv_build"
+
+# [tool.uv.sources]
+# wrtc-common = { workspace = true }

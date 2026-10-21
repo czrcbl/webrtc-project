@@ -1,0 +1,29 @@
+services:
+  livekit-server:
+    build: ./repos/livekit
+    ports:
+      - "7880:7880"      # HTTP + WebSocket signalling
+      - "7881:7881"      # ICE/TCP fallback
+      - "7882:7882/udp"  # ICE/UDP media -- the /udp suffix is required
+    command:
+      - "--dev"          # placeholder devkey/secret, debug logging
+      - "--bind"         # without this, dev mode binds 127.0.0.1 only
+      - "0.0.0.0"
+      - "--udp-port"     # pin media to one port so it can be published
+      - "7882"
+      - "--node-ip"      # rootless podman's 10.89.0.0/24 is unroutable from
+      - "127.0.0.1"      # the host, so advertise the published port instead
+    restart: unless-stopped
+  livekit-meet:
+    build: ./repos/meet
+    ports:
+      - "3000:3000"
+    environment:
+      # Handed to the browser as serverUrl, so it must resolve on the host
+      # rather than inside the compose network.
+      LIVEKIT_URL: "ws://localhost:7880"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
+    depends_on:
+      - livekit-server
+    restart: unless-stopped
