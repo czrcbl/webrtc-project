@@ -1,9 +1,7 @@
-from pydantic import BaseModel
 from typing import Literal
-import os
 
-# TODO: create config
-SAMPLE_RATE = int(os.getenv("STT_SAMPLE_RATE", "16000"))
+from pydantic import BaseModel
+from src.messages import SAMPLE_RATE
 
 
 class TranscriptMessage(BaseModel):

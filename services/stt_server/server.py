@@ -1,8 +1,9 @@
 """
 Streaming speech-to-text over WebSocket, backed by faster-whisper.
 
-Run:
-    uvicorn server:app --host 0.0.0.0 --port 8000
+Run (from the repo root; the imports are package-relative):
+    mise run stt-server
+    # or: uvicorn services.stt_server.server:app --host 0.0.0.0 --port 8000
 
 Protocol (one WebSocket connection = one audio stream):
     Connect:  ws://HOST:8000/ws/transcribe?language=pt&task=transcribe
@@ -17,7 +18,7 @@ Protocol (one WebSocket connection = one audio stream):
         {"type": "done", "language": "pt"}                 then the server closes
         {"type": "error", "message": "..."}
 
-Configuration (environment variables):
+Configuration (environment variables, parsed in src/config.py):
     WHISPER_MODEL         tiny|base|small|medium|large-v3|large-v3-turbo|<path>  (default: small)
     WHISPER_DEVICE        auto|cpu|cuda                     (default: auto)
     WHISPER_COMPUTE_TYPE  default|int8|int8_float16|float16 (default: default)
@@ -27,7 +28,6 @@ Configuration (environment variables):
 import asyncio
 import json
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -37,15 +37,18 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from faster_whisper import WhisperModel
 from pydantic import BaseModel
 
+from .src.config import settings
+from .src.messages import (
+    SAMPLE_RATE,
+    DoneMessage,
+    ErrorMessage,
+    FinalMessage,
+    PartialMessage,
+    ReadyMessage,
+)
+
 log = logging.getLogger("stt")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-SAMPLE_RATE = 16_000
-
-MODEL_NAME = os.getenv("WHISPER_MODEL", "small")
-DEVICE = os.getenv("WHISPER_DEVICE", "auto")
-COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "default")
-NUM_WORKERS = int(os.getenv("WHISPER_WORKERS", "2"))
 
 # Streaming knobs
 DECODE_EVERY_S = 1.0  # re-transcribe after this much new audio
@@ -58,13 +61,21 @@ state: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("Loading %s on %s (%s)", MODEL_NAME, DEVICE, COMPUTE_TYPE)
+    log.info(
+        "Loading %s on %s (%s)",
+        settings.whisper_model,
+        settings.whisper_device,
+        settings.whisper_compute_type,
+    )
     state["model"] = WhisperModel(
-        MODEL_NAME, device=DEVICE, compute_type=COMPUTE_TYPE, num_workers=NUM_WORKERS
+        settings.whisper_model,
+        device=settings.whisper_device,
+        compute_type=settings.whisper_compute_type,
+        num_workers=settings.whisper_workers,
     )
     # transcribe() is blocking; run it in a pool sized to the model's workers so
     # extra connections queue instead of oversubscribing the CPU/GPU.
-    state["pool"] = ThreadPoolExecutor(max_workers=NUM_WORKERS)
+    state["pool"] = ThreadPoolExecutor(max_workers=settings.whisper_workers)
     yield
     state["pool"].shutdown(wait=False)
 
@@ -74,7 +85,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": MODEL_NAME}
+    return {"status": "ok", "model": settings.whisper_model}
 
 
 @dataclass
@@ -128,6 +139,10 @@ class Stream:
         return " ".join(self.committed)[-PROMPT_CHARS:]
 
 
+async def send(ws: WebSocket, msg: BaseModel) -> None:
+    await ws.send_text(msg.model_dump_json())
+
+
 async def decode(ws: WebSocket, st: Stream, final: bool) -> None:
     st.pending_new = 0
     if len(st.buffer) == 0:
@@ -166,13 +181,13 @@ async def decode(ws: WebSocket, st: Stream, final: bool) -> None:
     for s in segs[:n_commit]:
         if s.text:
             st.committed.append(s.text)
-            await ws.send_json(
-                {
-                    "type": "final",
-                    "start": round(st.offset_s + s.start, 2),
-                    "end": round(st.offset_s + s.end, 2),
-                    "text": s.text,
-                }
+            await send(
+                ws,
+                FinalMessage(
+                    start=round(st.offset_s + s.start, 2),
+                    end=round(st.offset_s + s.end, 2),
+                    text=s.text,
+                ),
             )
 
     if n_commit:
@@ -183,19 +198,19 @@ async def decode(ws: WebSocket, st: Stream, final: bool) -> None:
 
     partial = " ".join(s.text for s in segs[n_commit:] if s.text)
     if not final:
-        await ws.send_json({"type": "transcript", "text": partial})
+        await send(ws, PartialMessage(text=partial))
 
 
 @app.websocket("/ws/transcribe")
 async def ws_transcribe(ws: WebSocket, language: str | None = None, task: str = "transcribe"):
     await ws.accept()
     if task not in ("transcribe", "translate"):
-        await ws.send_json({"type": "error", "message": "task must be transcribe or translate"})
+        await send(ws, ErrorMessage(message="task must be transcribe or translate"))
         await ws.close(code=1008)
         return
 
     st = Stream(language=language or None, task=task)
-    await ws.send_json({"type": "ready"})
+    await send(ws, ReadyMessage())
 
     try:
         while True:
@@ -212,11 +227,11 @@ async def ws_transcribe(ws: WebSocket, language: str | None = None, task: str = 
                 try:
                     cmd = json.loads(msg["text"])
                 except json.JSONDecodeError:
-                    await ws.send_json({"type": "error", "message": "invalid JSON"})
+                    await send(ws, ErrorMessage(message="invalid JSON"))
                     continue
                 if cmd.get("type") == "eof":
                     await decode(ws, st, final=True)
-                    await ws.send_json({"type": "done", "language": st.detected_language})
+                    await send(ws, DoneMessage(language=st.detected_language))
                     await ws.close()
                     return
 
@@ -225,7 +240,7 @@ async def ws_transcribe(ws: WebSocket, language: str | None = None, task: str = 
     except Exception as e:  # keep one bad stream from killing the server
         log.exception("stream failed")
         try:
-            await ws.send_json({"type": "error", "message": str(e)})
+            await send(ws, ErrorMessage(message=str(e)))
             await ws.close(code=1011)
         except Exception:
             pass

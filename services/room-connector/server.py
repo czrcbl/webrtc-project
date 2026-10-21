@@ -1,87 +1,3 @@
-# """
-# Server for tapping into the call by adding a participant
-# It does not use the Agents Api
-
-
-# """
-
-# from livekit.agents import AgentServer, JobContext, AutoSubscribe, cli
-# from logging import Logger
-# from livekit import rtc
-# import asyncio
-# import os
-# import websockets
-# import json
-# import logging
-
-# logger = logging.getLogger("transcriber")
-# logger.setLevel(logging.DEBUG)
-
-# server = AgentServer()
-
-
-# STT_WS_URL = os.getenv("STT_WS_URL", "ws://localhost:8000/ws/transcribe")
-# STT_LANGUAGE = os.getenv("STT_LANGUAGE", "").strip()  # "" -> auto-detect
-# # STT_SAMPLE_RATE = 16_000  # what stt_server expects
-# # SEND_CHUNK_MS = 100  # 3200 B per frame, the pacing stt_server/client.py uses
-# SAMPLE_RATE = int(os.environ.get("WHISPER_SAMPLE_RATE", 16_000))
-
-
-# @server.rtc_session(agent_name="listerner")
-# async def entrypoint(ctx: JobContext):
-
-#     tasks: dict[str, asyncio.Task] = {}
-
-#     @ctx.room.on("track_subscribed")
-#     def on_sub(track, pub, p):
-#         logger.info("Subscribed to {}", track)
-#         if track.kind == rtc.TrackKind.KIND_AUDIO:
-#             tasks[track.sid] = asyncio.create_task(bridge(ctx.room, track, p))
-
-#     @ctx.room.on("track_unsubscribed")
-#     def on_unsub(track, pub, p):
-#         logger.info("Unsubscribed to {}", track)
-#         if t := tasks.pop(track.sid, None):
-#             t.cancel()
-
-#     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
-
-
-# async def pump(ws, track):
-#     async for ev in rtc.AudioStream(track, sample_rate=SAMPLE_RATE, num_channels=1):
-#         await ws.send(bytes(ev.frame.data))
-
-
-# async def bridge(room, track, p):
-#     """Pipe the audio streams to an external service using ws"""
-#     async with websockets.connect(STT_WS_URL) as ws:
-#         logger.debug("Websocek connected for track {}", track)
-#         await ws.send(json.dumps({"participant": p.identity, "rate": 16000}))
-#         up = asyncio.create_task(pump(ws, track))
-#         try:
-#             async for raw in ws:  # downlink
-#                 m = json.loads(raw)
-#                 if m["type"] == "transcript":
-#                     await room.local_participant.send_text(
-#                         m["text"],
-#                         topic="lk.transcription",
-#                         attributes={
-#                             "lk.transcribed_track_id": track.sid,
-#                             "lk.segment_id": m["segment_id"],
-#                             "lk.transcription_final": str(m["final"]).lower(),
-#                         },
-#                     )
-#                 elif m["type"] == "chat":
-#                     await room.local_participant.send_text(m["text"], topic="lk.chat")
-#         finally:
-#             up.cancel()
-
-
-# if __name__ == "__main__":
-#     logger.debug("Starting server")
-#     cli.run_app(server)
-
-
 """
 Listen-only LiveKit participant using the plain `livekit` rtc SDK (no Agents framework).
  
@@ -90,11 +6,12 @@ What it does:
     but cannot publish audio/video.
   - For every remote audio track, streams 16 kHz mono PCM16 to an external STT
     service over a WebSocket (one socket per track).
-  - Publishes what the service sends back into the room:
-        {"type": "transcript", "text": ..., "segment_id": ..., "final": bool}
-            -> text stream on topic "lk.transcription", tied to the speaker's track
-        {"type": "chat", "text": ...}
-            -> text stream on topic "lk.chat"
+  - Publishes what the service sends back (see src/messages.py) into the room as
+    text streams on topic "lk.transcription", tied to the speaker's track:
+        {"type": "partial", "text": ...}  -> lk.transcription_final = "false"
+        {"type": "final", "text": ...}    -> lk.transcription_final = "true"
+    A partial and the final that commits it share an lk.segment_id, so captions
+    are refined in place.
  
 Install:
     pip install livekit livekit-api websockets
@@ -105,18 +22,25 @@ Run:
 """
 
 import asyncio
-import json
 import logging
-import os
 import signal
 import sys
-
+from urllib.parse import urlencode
 
 import websockets
-from livekit import rtc, api
-
+from livekit import api, rtc
+from src.config import settings
+from src.messages import (
+    SAMPLE_RATE,
+    DoneMessage,
+    EofMessage,
+    ErrorMessage,
+    FinalMessage,
+    PartialMessage,
+    ReadyMessage,
+    server_message,
+)
 from src.utils import make_token
-from src.models import StartMessage, TranscriptMessage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -124,68 +48,77 @@ logging.basicConfig(
 )
 logger = logging.getLogger("listener")
 
-LIVEKIT_URL = os.environ["LIVEKIT_URL"]
-LIVEKIT_API_KEY = os.environ["LIVEKIT_API_KEY"]
-LIVEKIT_API_SECRET = os.environ["LIVEKIT_API_SECRET"]
-
-IDENTITY = os.getenv("LISTENER_IDENTITY", "listener")
-STT_WS_URL = os.getenv("STT_WS_URL", "ws://localhost:8000/ws/transcribe")
-SAMPLE_RATE = int(os.getenv("STT_SAMPLE_RATE", "16000"))
-CHUNK_MS = int(os.getenv("SEND_CHUNK_MS", "100"))
-
 
 async def send_audio(ws, track: rtc.Track) -> None:
-    """Uplink: the SDK resamples to mono SAMPLE_RATE and hands us CHUNK_MS frames."""
+    """Uplink: the SDK resamples to mono SAMPLE_RATE and hands us send_chunk_ms frames."""
     stream = rtc.AudioStream(
         track,
         sample_rate=SAMPLE_RATE,
         num_channels=1,
-        frame_size_ms=CHUNK_MS,  # 100 ms @ 16 kHz = 3200 bytes per frame
+        frame_size_ms=settings.send_chunk_ms,
     )
     try:
         async for ev in stream:
             await ws.send(bytes(ev.frame.data))  # pcm_s16le
+        # Track ended on its own: have the server flush the uncommitted tail.
+        await ws.send(EofMessage().model_dump_json())
     finally:
         await stream.aclose()
 
 
 async def receive_results(ws, room: rtc.Room, track: rtc.Track) -> None:
-    """Downlink: turn service messages into LiveKit text streams."""
+    """Downlink: turn service messages into LiveKit text streams. Returns on done."""
+    seq = 0  # partials share the open segment's id; each final closes it
+
+    async def publish(text: str, final: bool) -> None:
+        await room.local_participant.send_text(
+            text,
+            topic="lk.transcription",
+            attributes={
+                "lk.transcribed_track_id": track.sid,
+                # Prefixed with the track: Captions.tsx groups across all speakers.
+                "lk.segment_id": f"{track.sid}-{seq}",
+                "lk.transcription_final": "true" if final else "false",
+            },
+        )
+
     async for raw in ws:
         if isinstance(raw, bytes):
             continue  # this protocol only expects JSON text frames back
-        m = json.loads(raw)
-        kind = m.get("type")
-
-        if kind == "transcript":
-            await room.local_participant.send_text(
-                m["text"],
-                topic="lk.transcription",
-                attributes={
-                    "lk.transcribed_track_id": track.sid,
-                    # "lk.segment_id": str(m["segment_id"]),
-                    "lk.transcription_final": "true" if m.get("final") else "false",
-                },
-            )
-        elif kind == "chat":
-            await room.local_participant.send_text(m["text"], topic="lk.chat")
-        else:
-            logger.warning("unknown message from STT service: %s", m)
+        match server_message.validate_json(raw):
+            case PartialMessage(text=text) if text:
+                await publish(text, final=False)
+            case FinalMessage(text=text):
+                await publish(text, final=True)
+                seq += 1
+            case ErrorMessage(message=message):
+                logger.error("STT error on %s: %s", track.sid, message)
+            case DoneMessage(language=language):
+                logger.info("STT done for %s (language: %s)", track.sid, language)
+                return
+            case _:
+                pass  # empty partial: nothing uncommitted left
 
 
 async def bridge(room: rtc.Room, track: rtc.Track, participant: rtc.RemoteParticipant) -> None:
-    async with websockets.connect(STT_WS_URL) as ws:
+    # The server takes its options from the query string; there is no start frame.
+    url = settings.stt_ws_url
+    if settings.stt_language:
+        url += f"?{urlencode({'language': settings.stt_language})}"
+    async with websockets.connect(url) as ws:
+        hello = server_message.validate_json(await ws.recv())
+        if not isinstance(hello, ReadyMessage):
+            raise RuntimeError(f"STT server did not send ready: {hello}")
         logger.info("STT socket open for %s (%s)", participant.identity, track.sid)
-        await ws.send(
-            StartMessage(participant=participant.identity, track_id=track.sid).model_dump_json(),
-        )
+
         tasks = [
             asyncio.create_task(send_audio(ws, track)),
             asyncio.create_task(receive_results(ws, room, track)),
         ]
         try:
-            # Whichever side ends first (track gone, socket closed, error) ends the bridge.
-            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            # Audio ending only sends eof; the bridge ends when the results side
+            # finishes (done or socket closed), or as soon as either side raises.
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
             for t in done:
                 t.result()  # re-raise errors so they get logged
         finally:
@@ -195,8 +128,11 @@ async def bridge(room: rtc.Room, track: rtc.Track, participant: rtc.RemotePartic
 
 
 async def list_room_names() -> list[str]:
-    # Reads LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET from the env.
-    lkapi = api.LiveKitAPI()
+    lkapi = api.LiveKitAPI(
+        url=settings.livekit_url,
+        api_key=settings.livekit_api_key,
+        api_secret=settings.livekit_api_secret.get_secret_value(),
+    )
     try:
         resp = await lkapi.room.list_rooms(api.ListRoomsRequest())
         return [room.name for room in resp.rooms]
@@ -251,11 +187,11 @@ async def main(room_name: str | None) -> None:
         room_name = (await list_room_names())[0]
 
     await room.connect(
-        LIVEKIT_URL,
+        settings.livekit_url,
         make_token(room_name),
         options=rtc.RoomOptions(auto_subscribe=False),
     )
-    logger.info("joined room %s as %s", room.name, IDENTITY)
+    logger.info("joined room %s as %s", room.name, settings.listener_identity)
 
     # Tracks published before we joined don't fire track_published.
     for p in room.remote_participants.values():

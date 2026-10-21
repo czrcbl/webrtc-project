@@ -8,10 +8,11 @@ text-stream topic (interim + final, with lk.segment_id / lk.transcribed_track_id
 with the sender identity set to the participant being transcribed. No publishing
 code here.
 
-Env (supplied by mise.toml):
+Env (supplied by mise.toml, parsed in src/config.py):
     LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
-    STT_WS_URL    WebSocket endpoint of stt_server
-    STT_LANGUAGE  ISO code to pin the language; empty means auto-detect
+    STT_WS_URL     WebSocket endpoint of stt_server
+    STT_LANGUAGE   ISO code to pin the language; empty means auto-detect
+    SEND_CHUNK_MS  audio per frame sent to stt_server
 
 Run:
     mise run transcriber        # or: python room-connector/agent.py dev
@@ -20,7 +21,6 @@ Run:
 import asyncio
 import json
 import logging
-import os
 from urllib.parse import urlencode
 
 from livekit import rtc
@@ -41,15 +41,13 @@ from livekit.agents import (
     stt,
     utils,
 )
+from src.config import settings
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
 logger = logging.getLogger("agents-transcriber")
 
-STT_WS_URL = os.getenv("STT_WS_URL", "ws://localhost:8000/ws/transcribe")
-STT_LANGUAGE = os.getenv("STT_LANGUAGE", "").strip()  # "" -> auto-detect
 STT_SAMPLE_RATE = 16_000  # what stt_server expects
-SEND_CHUNK_MS = 100  # 3200 B per frame, the pacing stt_server/client.py uses
 
 
 class WhisperSTT(stt.STT):
@@ -70,7 +68,7 @@ class WhisperSTT(stt.STT):
         return WhisperSTTStream(
             stt=self,
             conn_options=conn_options,
-            language=language or STT_LANGUAGE or None,
+            language=language or settings.stt_language or None,
         )
 
 
@@ -91,7 +89,7 @@ class WhisperSTTStream(stt.RecognizeStream):
         q = {"task": "transcribe"}
         if self._language:
             q["language"] = self._language
-        return f"{STT_WS_URL}?{urlencode(q)}"
+        return f"{settings.stt_ws_url}?{urlencode(q)}"
 
     async def _run(self) -> None:
         try:
@@ -99,18 +97,18 @@ class WhisperSTTStream(stt.RecognizeStream):
                 hello = json.loads(await ws.recv())
                 if hello.get("type") != "ready":
                     raise APIConnectionError(f"bad handshake: {hello}")
-                logger.debug("connected to %s", STT_WS_URL)
+                logger.debug("connected to %s", settings.stt_ws_url)
                 await asyncio.gather(self._send(ws), self._recv(ws))
         except WebSocketException as e:
             # Retryable: RecognizeStream._main_task backs off and re-runs us.
             raise APIConnectionError("stt_server connection lost") from e
 
     async def _send(self, ws) -> None:
-        """Forward PCM to the server, batched to SEND_CHUNK_MS per frame."""
+        """Forward PCM to the server, batched to send_chunk_ms per frame."""
         bstream = utils.audio.AudioByteStream(
             sample_rate=STT_SAMPLE_RATE,
             num_channels=1,
-            samples_per_channel=STT_SAMPLE_RATE * SEND_CHUNK_MS // 1000,
+            samples_per_channel=STT_SAMPLE_RATE * settings.send_chunk_ms // 1000,
         )
         async for item in self._input_ch:
             # Flush sentinels are deliberately ignored. {"type": "eof"} makes the
@@ -174,7 +172,7 @@ def _event(
     alts = (
         [
             stt.SpeechData(
-                language=LanguageCode(STT_LANGUAGE or "en"),
+                language=LanguageCode(settings.stt_language or "en"),
                 text=text,
                 start_time=start,
                 end_time=end,

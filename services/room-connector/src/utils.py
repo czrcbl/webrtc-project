@@ -1,12 +1,5 @@
-import os
-
 from livekit import api
-
-# TODO: refactor to args
-LIVEKIT_URL = os.environ["LIVEKIT_URL"]
-LIVEKIT_API_KEY = os.environ["LIVEKIT_API_KEY"]
-LIVEKIT_API_SECRET = os.environ["LIVEKIT_API_SECRET"]
-IDENTITY = os.getenv("LISTENER_IDENTITY", "listener")
+from src.config import settings
 
 
 def make_token(room_name: str) -> str:
@@ -19,8 +12,8 @@ def make_token(room_name: str) -> str:
         hidden=True,  # don't appear in the participant list
     )
     return (
-        api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
-        .with_identity(IDENTITY)
+        api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret.get_secret_value())
+        .with_identity(settings.listener_identity)
         .with_name("Listener")
         .with_grants(grants)
         .to_jwt()
