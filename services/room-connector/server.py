@@ -20,28 +20,17 @@ import sys
 
 from livekit import api, rtc
 from src.config import settings
-from src.deepgram_service import DeepgramService
+from src.deepgram_service import BridgeService, DeepgramService
 from src.logger import logger
 from src.utils import make_token
 
 
 async def bridge(room: rtc.Room, track: rtc.Track, participant: rtc.RemoteParticipant) -> None:
 
-    stt_service = DeepgramService()
+    bridge_service = BridgeService(room, track, participant)
+    stt_service = DeepgramService(bridge_service)
 
-    async with stt_service.start_connection() as ws:
-        tasks = [
-            asyncio.create_task(stt_service.send_audio(ws, track)),
-            asyncio.create_task(stt_service.receive_results(ws, room, track, participant)),
-        ]
-        try:
-            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-            for t in done:
-                t.result()
-        finally:
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+    await stt_service.run()
 
 
 async def list_room_names() -> list[str]:
@@ -116,6 +105,7 @@ async def main(room_name: str | None) -> None:
         for pub in p.track_publications.values():
             subscribe_if_audio(pub)
 
+    # Finish
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
