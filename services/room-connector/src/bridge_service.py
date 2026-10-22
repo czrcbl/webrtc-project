@@ -42,21 +42,28 @@ class BridgeService:
         transcript_text: str,
         final: bool,
     ) -> None:
-        logger.info(
-            "Publishing to track %s, identity %s", self.track.sid, self.participant.identity
-        )
-        logger.info("Text received %s", transcript_text)
-
+        # The final goes out under the same id as the partials it commits; only
+        # then does the turn advance, so the next partial opens a new segment.
+        segment_id = f"{self.track.sid}-{self._nonce}-{self._turn}"
         if final:
             self._turn += 1
-            # TODO: Check stream text necessity
+
+        logger.info(
+            "Publishing segment %s (final=%s) for identity %s: %s",
+            segment_id,
+            final,
+            self.participant.identity,
+            transcript_text,
+        )
+
+        # TODO: Check stream text necessity
         writer = await self.room.local_participant.stream_text(
             topic="lk.transcription",
             sender_identity=self.participant.identity,
             attributes={
                 "lk.transcribed_track_id": self.track.sid,
                 # Prefixed with the track: Captions.tsx groups across all speakers.
-                "lk.segment_id": f"{self.track.sid}-{self._nonce}-{self._turn}",
+                "lk.segment_id": segment_id,
                 "lk.transcription_final": "true" if final else "false",
             },
         )
@@ -65,3 +72,30 @@ class BridgeService:
             await writer.write(transcript_text)
         finally:
             await writer.aclose()
+
+    async def publish_chat(
+        self,
+        message: str,
+        destination_identities: list[str] | None = None,
+    ) -> None:
+        """Send a chat message to the room as the agent itself."""
+        logger.info(
+            "Publishing chat as %s: %s",
+            self.room.local_participant.identity,
+            message,
+        )
+        await self.room.local_participant.send_text(
+            message,
+            topic="lk.chat",
+            destination_identities=destination_identities,  # None = everyone
+        )
+
+
+class SummaryService:
+    def __init__(self):
+        # In memory for now
+        self.memory = []
+
+    def store_text(self, message: str):
+        """Store only the transcript for now"""
+        self.memory.append(message)

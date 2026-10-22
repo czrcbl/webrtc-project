@@ -64,24 +64,33 @@ class DeepgramService(BaseTranscriptionService):
             if isinstance(msg, bytes):
                 continue
             data = json.loads(msg)
-            logger.info(f"Received {data}")
+            # logger.info(f"Received {data}")
 
             if data.get("type") == "Results":
                 alternatives = (data.get("channel") or {}).get("alternatives") or []
                 transcript = alternatives[0].get("transcript") if alternatives else ""
-                is_final = data.get("is_final")
+                is_final = bool(data.get("is_final"))
 
-                logger.info("transcript %s", transcript)
+                logger.info(
+                    "transcript track=%s is_final=%s speech_final=%s: %s",
+                    self.bridge_service.track.sid,
+                    is_final,
+                    data.get("speech_final"),
+                    transcript,
+                )
 
-                if transcript:
-                    await self.bridge_service.publish_transcript(
-                        transcript,
-                        final=False,
-                    )
-                elif is_final:
+                # Check is_final first: finals usually carry text, and they are what
+                # closes the segment. An empty final still goes out, as Deepgram
+                # dropping the interim text it had for that stretch.
+                if is_final:
                     await self.bridge_service.publish_transcript(
                         transcript,
                         final=True,
+                    )
+                elif transcript:
+                    await self.bridge_service.publish_transcript(
+                        transcript,
+                        final=False,
                     )
             else:
                 logger.info("Non Result message %s", data.get("type"))

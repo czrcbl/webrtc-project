@@ -4,6 +4,7 @@ NOTES.md
 .cache/
 mise.local.toml
 .ai-jail
+temp/
 CLAUDE.md
 
 .venv/
