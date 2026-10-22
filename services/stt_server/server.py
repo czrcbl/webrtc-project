@@ -5,18 +5,17 @@ Run (from the repo root; the imports are package-relative):
     mise run stt-server
     # or: uvicorn services.stt_server.server:app --host 0.0.0.0 --port 8000
 
-Protocol (one WebSocket connection = one audio stream):
+Protocol (one WebSocket connection = one audio stream; details in src/messages.py):
     Connect:  ws://HOST:8000/ws/transcribe?language=pt&task=transcribe
-              (language is optional; omit it to auto-detect)
+              (all parameters in the query string, no handshake)
     Client -> server:
         binary frames   raw PCM, signed 16-bit little-endian, mono, 16 kHz
-        text frame      {"type": "eof"}   flush remaining audio and finish
+        text frame      eof   flush remaining audio and finish
     Server -> client (JSON text frames):
-        {"type": "ready"}
-        {"type": "partial", "text": "..."}                 may still change
-        {"type": "final", "start": 1.2, "end": 3.4, "text": "..."}   stable
-        {"type": "done", "language": "pt"}                 then the server closes
-        {"type": "error", "message": "..."}
+        {"text": "...", "final": false}   may still change
+        {"text": "...", "final": true}    stable
+    After eof the server closes with 1000; bad parameters close with 1008 and
+    server failures with 1011, with the reason in the close frame.
 
 Configuration (environment variables, parsed in src/config.py):
     WHISPER_MODEL         tiny|base|small|medium|large-v3|large-v3-turbo|<path>  (default: small)
@@ -26,7 +25,6 @@ Configuration (environment variables, parsed in src/config.py):
 """
 
 import asyncio
-import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -35,17 +33,10 @@ from dataclasses import dataclass, field
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from faster_whisper import WhisperModel
-from pydantic import BaseModel
+from pydantic import ValidationError
 
 from .src.config import settings
-from .src.messages import (
-    SAMPLE_RATE,
-    DoneMessage,
-    ErrorMessage,
-    FinalMessage,
-    PartialMessage,
-    ReadyMessage,
-)
+from .src.messages import EOF, SAMPLE_RATE, StreamParams, TranscriptMessage
 
 log = logging.getLogger("stt")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -119,7 +110,6 @@ class Stream:
     pending_new: int = 0  # samples received since the last decode
     carry: bytes = b""  # odd trailing byte from a split sample
     committed: list[str] = field(default_factory=list)
-    detected_language: str | None = None
 
     def add_pcm16(self, data: bytes) -> None:
         data = self.carry + data
@@ -139,8 +129,13 @@ class Stream:
         return " ".join(self.committed)[-PROMPT_CHARS:]
 
 
-async def send(ws: WebSocket, msg: BaseModel) -> None:
-    await ws.send_text(msg.model_dump_json())
+async def send(ws: WebSocket, text: str, final: bool) -> None:
+    await ws.send_text(TranscriptMessage(text=text, final=final).model_dump_json())
+
+
+async def close(ws: WebSocket, code: int, reason: str) -> None:
+    # Close reasons are capped at 123 bytes by the WebSocket spec.
+    await ws.close(code=code, reason=reason.encode()[:123].decode(errors="ignore"))
 
 
 async def decode(ws: WebSocket, st: Stream, final: bool) -> None:
@@ -149,10 +144,9 @@ async def decode(ws: WebSocket, st: Stream, final: bool) -> None:
         return
 
     loop = asyncio.get_running_loop()
-    segs, lang = await loop.run_in_executor(
+    segs, _ = await loop.run_in_executor(
         state["pool"], transcribe_sync, st.buffer.copy(), st.language, st.task, st.prompt()
     )
-    st.detected_language = st.detected_language or lang
     length = st.buffer_s
 
     if not segs:
@@ -181,14 +175,7 @@ async def decode(ws: WebSocket, st: Stream, final: bool) -> None:
     for s in segs[:n_commit]:
         if s.text:
             st.committed.append(s.text)
-            await send(
-                ws,
-                FinalMessage(
-                    start=round(st.offset_s + s.start, 2),
-                    end=round(st.offset_s + s.end, 2),
-                    text=s.text,
-                ),
-            )
+            await send(ws, s.text, final=True)
 
     if n_commit:
         cut_s = segs[n_commit - 1].end
@@ -197,20 +184,31 @@ async def decode(ws: WebSocket, st: Stream, final: bool) -> None:
         st.offset_s += cut / SAMPLE_RATE
 
     partial = " ".join(s.text for s in segs[n_commit:] if s.text)
-    if not final:
-        await send(ws, PartialMessage(text=partial))
+    if partial and not final:
+        await send(ws, partial, final=False)
 
 
 @app.websocket("/ws/transcribe")
-async def ws_transcribe(ws: WebSocket, language: str | None = None, task: str = "transcribe"):
+async def ws_transcribe(ws: WebSocket):
     await ws.accept()
-    if task not in ("transcribe", "translate"):
-        await send(ws, ErrorMessage(message="task must be transcribe or translate"))
-        await ws.close(code=1008)
+    try:
+        params = StreamParams.model_validate(dict(ws.query_params))
+    except ValidationError as e:
+        await close(
+            ws,
+            1008,
+            "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()),
+        )
         return
 
-    st = Stream(language=language or None, task=task)
-    await send(ws, ReadyMessage())
+    log.info(
+        "stream open: participant=%s track=%s language=%s task=%s",
+        params.participant,
+        params.track_id,
+        params.language,
+        params.task,
+    )
+    st = Stream(language=params.language, task=params.task)
 
     try:
         while True:
@@ -224,23 +222,18 @@ async def ws_transcribe(ws: WebSocket, language: str | None = None, task: str = 
                     await decode(ws, st, final=False)
 
             elif msg.get("text") is not None:
-                try:
-                    cmd = json.loads(msg["text"])
-                except json.JSONDecodeError:
-                    await send(ws, ErrorMessage(message="invalid JSON"))
+                if msg["text"].strip() != EOF:
+                    log.warning("ignoring unexpected text frame: %.50s", msg["text"])
                     continue
-                if cmd.get("type") == "eof":
-                    await decode(ws, st, final=True)
-                    await send(ws, DoneMessage(language=st.detected_language))
-                    await ws.close()
-                    return
+                await decode(ws, st, final=True)
+                await ws.close()
+                return
 
     except WebSocketDisconnect:
         log.info("client disconnected")
     except Exception as e:  # keep one bad stream from killing the server
         log.exception("stream failed")
         try:
-            await send(ws, ErrorMessage(message=str(e)))
-            await ws.close(code=1011)
+            await close(ws, 1011, str(e))
         except Exception:
             pass

@@ -14,6 +14,7 @@ import signal
 import sys
 
 from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosedError
 
 SAMPLE_RATE = 16_000
 CHUNK_S = 0.1
@@ -39,23 +40,21 @@ async def send_audio(ws, proc, realtime: bool):
             if realtime:
                 await asyncio.sleep(CHUNK_S)
     finally:
-        await ws.send(json.dumps({"type": "eof"}))
+        await ws.send("eof")
 
 
 async def receive(ws):
-    async for raw in ws:
-        msg = json.loads(raw)
-        kind = msg["type"]
-        if kind == "partial":
-            sys.stdout.write(f"\r\033[K… {msg['text']}")
-            sys.stdout.flush()
-        elif kind == "final":
-            sys.stdout.write(f"\r\033[K[{msg['start']:7.2f} → {msg['end']:7.2f}] {msg['text']}\n")
-        elif kind == "done":
-            print(f"\r\033[K-- done (language: {msg.get('language')})")
-            return
-        elif kind == "error":
-            print(f"\nerror: {msg['message']}", file=sys.stderr)
+    try:
+        async for raw in ws:
+            msg = json.loads(raw)
+            if msg["final"]:
+                sys.stdout.write(f"\r\033[K{msg['text']}\n")
+            else:
+                sys.stdout.write(f"\r\033[K… {msg['text']}")
+                sys.stdout.flush()
+        print("\r\033[K-- done")
+    except ConnectionClosedError as e:
+        print(f"\nerror: {e.rcvd.reason if e.rcvd else e}", file=sys.stderr)
 
 
 async def main():
@@ -76,7 +75,6 @@ async def main():
 
     url = a.url + (f"?language={a.language}" if a.language else "")
     async with connect(url, max_size=None) as ws:
-        assert json.loads(await ws.recv())["type"] == "ready"
         proc = await ffmpeg_pcm(source)
         # Ctrl+C stops ffmpeg; the sender then sees EOF and asks the server to
         # flush, so the last words aren't lost.
