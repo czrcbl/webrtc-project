@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     stt_ws_url: str = "ws://localhost:8000/ws/transcribe"
     stt_language: str = ""  # "" -> auto-detect
     send_chunk_ms: int = Field(100, gt=0)  # 100 ms @ 16 kHz = 3200 bytes per frame
+    sample_rate: int = 16_000
 
 
 settings = Settings()

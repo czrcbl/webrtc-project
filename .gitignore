@@ -2,7 +2,9 @@ repos/
 !repos/README.md
 NOTES.md
 .cache/
+mise.local.toml
 .ai-jail
+CLAUDE.md
 
 .venv/
 __pycache__/
