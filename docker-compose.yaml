@@ -1,6 +1,7 @@
 services:
   livekit-server:
-    build: ./repos/livekit
+    # build: ./repos/livekit
+    image: livekit/livekit-server
     ports:
       - "7880:7880"      # HTTP + WebSocket signalling
       - "7881:7881"      # ICE/TCP fallback
@@ -15,13 +16,14 @@ services:
       - "127.0.0.1"      # the host, so advertise the published port instead
     restart: unless-stopped
   livekit-meet:
-    build: ./repos/meet
+    build:
+      context: https://github.com/czrcbl/meet.git
     ports:
       - "3000:3000"
     environment:
       # Handed to the browser as serverUrl, so it must resolve on the host
       # rather than inside the compose network.
-      LIVEKIT_URL: "ws://localhost:7880"
+      LIVEKIT_URL: "${LIVEKIT_URL}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
     depends_on:
