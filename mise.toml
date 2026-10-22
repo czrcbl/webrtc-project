@@ -21,6 +21,8 @@ WHISPER_SAMPLE_RATE = 16_000
 WHISPER_COMPUTE_TYPE = "int8_float16"            # Reduce memory
 STT_WS_URL = "ws://localhost:8000/ws/transcribe"
 STT_LANGUAGE = "pt"                              # empty -> auto-detect; set "en" / "pt" to pin
+# STT_PROVIDER = "whisper"
+STT_PROVIDER = "deepgram"
 
 [tasks.bootstrap]
 description = "Prepare repo for development"
@@ -41,7 +43,7 @@ run = "cd repos/meet && pnpm dev"
 [tasks.stt-server]
 run = """
   LD_LIBRARY_PATH="$(python -c 'import importlib; print(":".join(list(importlib.import_module(m).__path__)[0] for m in ("nvidia.cublas.lib","nvidia.cudnn.lib")))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  WHISPER_DEVICE=cuda uv run python -m uvicorn services.stt_server.server:app --host 0.0.0.0 --port 8000 --reload
+  WHISPER_DEVICE=cuda uv run python -m uvicorn services.stt_server.app:app --host 0.0.0.0 --port 8000 --reload
 """
 
 [tasks.transcriber]
