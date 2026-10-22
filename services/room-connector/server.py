@@ -1,6 +1,6 @@
 """
 Listen-only LiveKit participant using the plain `livekit` rtc SDK (no Agents framework).
- 
+
 What it does:
   - Joins a room as a hidden participant that can subscribe and send data,
     but cannot publish audio/video.
@@ -12,115 +12,32 @@ What it does:
         {"type": "final", "text": ...}    -> lk.transcription_final = "true"
     A partial and the final that commits it share an lk.segment_id, so captions
     are refined in place.
- 
-Install:
-    pip install livekit livekit-api websockets
- 
-Run:
-    LIVEKIT_URL=wss://... LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... \
-    python listener.py <room-name>
 """
 
 import asyncio
-import logging
 import signal
 import sys
-from urllib.parse import urlencode
 
-import websockets
 from livekit import api, rtc
 from src.config import settings
-from src.messages import (
-    SAMPLE_RATE,
-    DoneMessage,
-    EofMessage,
-    ErrorMessage,
-    FinalMessage,
-    PartialMessage,
-    ReadyMessage,
-    server_message,
-)
+from src.deepgram_service import DeepgramService
+from src.logger import logger
 from src.utils import make_token
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-logger = logging.getLogger("listener")
-
-
-async def send_audio(ws, track: rtc.Track) -> None:
-    """Uplink: the SDK resamples to mono SAMPLE_RATE and hands us send_chunk_ms frames."""
-    stream = rtc.AudioStream(
-        track,
-        sample_rate=SAMPLE_RATE,
-        num_channels=1,
-        frame_size_ms=settings.send_chunk_ms,
-    )
-    try:
-        async for ev in stream:
-            await ws.send(bytes(ev.frame.data))  # pcm_s16le
-        # Track ended on its own: have the server flush the uncommitted tail.
-        await ws.send(EofMessage().model_dump_json())
-    finally:
-        await stream.aclose()
-
-
-async def receive_results(ws, room: rtc.Room, track: rtc.Track) -> None:
-    """Downlink: turn service messages into LiveKit text streams. Returns on done."""
-    seq = 0  # partials share the open segment's id; each final closes it
-
-    async def publish(text: str, final: bool) -> None:
-        await room.local_participant.send_text(
-            text,
-            topic="lk.transcription",
-            attributes={
-                "lk.transcribed_track_id": track.sid,
-                # Prefixed with the track: Captions.tsx groups across all speakers.
-                "lk.segment_id": f"{track.sid}-{seq}",
-                "lk.transcription_final": "true" if final else "false",
-            },
-        )
-
-    async for raw in ws:
-        if isinstance(raw, bytes):
-            continue  # this protocol only expects JSON text frames back
-        match server_message.validate_json(raw):
-            case PartialMessage(text=text) if text:
-                await publish(text, final=False)
-            case FinalMessage(text=text):
-                await publish(text, final=True)
-                seq += 1
-            case ErrorMessage(message=message):
-                logger.error("STT error on %s: %s", track.sid, message)
-            case DoneMessage(language=language):
-                logger.info("STT done for %s (language: %s)", track.sid, language)
-                return
-            case _:
-                pass  # empty partial: nothing uncommitted left
 
 
 async def bridge(room: rtc.Room, track: rtc.Track, participant: rtc.RemoteParticipant) -> None:
-    # The server takes its options from the query string; there is no start frame.
-    url = settings.stt_ws_url
-    if settings.stt_language:
-        url += f"?{urlencode({'language': settings.stt_language})}"
-    async with websockets.connect(url) as ws:
-        hello = server_message.validate_json(await ws.recv())
-        if not isinstance(hello, ReadyMessage):
-            raise RuntimeError(f"STT server did not send ready: {hello}")
-        logger.info("STT socket open for %s (%s)", participant.identity, track.sid)
 
+    stt_service = DeepgramService()
+
+    async with stt_service.start_connection() as ws:
         tasks = [
-            asyncio.create_task(send_audio(ws, track)),
-            asyncio.create_task(receive_results(ws, room, track)),
+            asyncio.create_task(stt_service.send_audio(ws, track)),
+            asyncio.create_task(stt_service.receive_results(ws, room, track, participant)),
         ]
         try:
-            # Audio ending only sends eof; the bridge ends when the results side
-            # finishes (done or socket closed), or as soon as either side raises.
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
             for t in done:
-                t.result()  # re-raise errors so they get logged
+                t.result()
         finally:
             for t in tasks:
                 t.cancel()
@@ -141,7 +58,9 @@ async def list_room_names() -> list[str]:
 
 
 async def main(room_name: str | None) -> None:
+
     room = rtc.Room()
+    # A bridge per track connected
     bridges: dict[str, asyncio.Task] = {}
     stop = asyncio.Event()
 
@@ -155,7 +74,6 @@ async def main(room_name: str | None) -> None:
         if not task.cancelled() and task.exception():
             logger.error("bridge for %s failed", sid, exc_info=task.exception())
 
-    # Event handlers must be plain (sync) functions; spawn tasks for async work.
     @room.on("track_published")
     def _on_published(pub: rtc.RemoteTrackPublication, p: rtc.RemoteParticipant):
         subscribe_if_audio(pub)
@@ -211,6 +129,4 @@ async def main(room_name: str | None) -> None:
 
 
 if __name__ == "__main__":
-    # if len(sys.argv) != 2:
-    #     sys.exit("usage: python listener.py <room-name>")
     asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else None))

@@ -23,5 +23,13 @@ class Settings(BaseSettings):
     send_chunk_ms: int = Field(100, gt=0)  # 100 ms @ 16 kHz = 3200 bytes per frame
     sample_rate: int = 16_000
 
+    deepgram_api_key: SecretStr
+    deepgram_model: str = "nova-3"
+    deepgram_language: str = "pt-BR"  # e.g. "pt-BR", or "multi" for code-switching
+    deepgram_interim_results: bool = True  # partial hypotheses while the person is still talking
+    deepgram_smart_format: bool = True  # punctuation, numbers, etc.
+    deepgram_endpointing_ms: int = Field(300, ge=10)  # silence before Deepgram marks speech_final
+    deepgram_utterance_end_ms: int = Field(1000, ge=1000)  # word gap before UtteranceEnd
+
 
 settings = Settings()
