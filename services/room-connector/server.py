@@ -20,7 +20,8 @@ import sys
 
 from livekit import api, rtc
 from src.config import settings
-from src.deepgram_service import BridgeService, DeepgramService
+from src.deepgram_service import DeepgramService
+from src.bridge_service import BridgeService, SummaryService
 from src.logger import logger
 from src.utils import make_token
 
@@ -110,11 +111,18 @@ async def main(room_name: str | None) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
+    summary_service = SummaryService(room)
+    # TODO: add done callback
+    smry = asyncio.create_task(summary_service.run())
+
     await stop.wait()
 
     for task in list(bridges.values()):
         task.cancel()
     await asyncio.gather(*bridges.values(), return_exceptions=True)
+
+    smry.cancel()
+
     await room.disconnect()
 
 

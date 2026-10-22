@@ -7,8 +7,9 @@ dependencies = [
     "livekit>=1.1.20",
     "pydantic>=2.14.1",
     "pydantic-settings>=2.10",
-    "websockets>=17.2",
+    "websockets<17",
     # "wrtc-common",
+    "google-genai>=2.31.0",
 ]
 
 [tool.uv]
