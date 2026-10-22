@@ -46,9 +46,18 @@ run = """
   WHISPER_DEVICE=cuda uv run python -m uvicorn services.stt_server.app:app --host 0.0.0.0 --port 8000 --reload
 """
 
+
 [tasks.transcriber]
 description = "Run the room transcriber"
 run = "uv run services/room-connector/server.py"
+
+[tasks.transcriber-en]
+run = "STT_LANGUAGE=en DEEPGRAM_LANGUAGE=en uv run services/room-connector/server.py"
+
+description = "Run the room transcriber"
+[tasks.multi-sample]
+description = "Join N fake speakers publishing speech: [--turns] [ROOM] [SPEAKERS] [LOOPS]"
+run = "bash scripts/run_multi_sample.sh"
 
 [tasks.transcriber-agent]
 description = "Run the room transcriber agent"
