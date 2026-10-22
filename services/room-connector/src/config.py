@@ -6,6 +6,8 @@ case-insensitive. Missing required vars fail at import with a validation error
 that names them.
 """
 
+from typing import Literal
+
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,6 +20,7 @@ class Settings(BaseSettings):
     livekit_api_secret: SecretStr
 
     listener_identity: str = "listener"
+    stt_provider: Literal["deepgram", "whisper"] = "deepgram"
     stt_ws_url: str = "ws://localhost:8000/ws/transcribe"
     stt_language: str = ""  # "" -> auto-detect
     send_chunk_ms: int = Field(100, gt=0)  # 100 ms @ 16 kHz = 3200 bytes per frame

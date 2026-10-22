@@ -20,16 +20,18 @@ import sys
 
 from livekit import api, rtc
 from src.config import settings
-from src.deepgram_service import DeepgramService
-from src.bridge_service import BridgeService, SummaryService
 from src.logger import logger
+from src.services.bridge_service import BridgeService, SummaryService
+from src.services.deepgram_service import DeepgramService
+from src.services.whisper_service import WhisperService
 from src.utils import make_token
 
 
 async def bridge(room: rtc.Room, track: rtc.Track, participant: rtc.RemoteParticipant) -> None:
 
     bridge_service = BridgeService(room, track, participant)
-    stt_service = DeepgramService(bridge_service)
+    service_cls = WhisperService if settings.stt_provider == "whisper" else DeepgramService
+    stt_service = service_cls(bridge_service)
 
     await stt_service.run()
 
