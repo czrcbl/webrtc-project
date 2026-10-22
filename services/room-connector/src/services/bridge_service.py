@@ -5,99 +5,10 @@ from google import genai
 from livekit import rtc
 from src.config import settings
 from src.logger import logger
-
-
-class Database:
-    # TODO: review this, if dispatching to more than one Room,
-    # conversations will get mixed on the same process
-    memory = []
-    lock = asyncio.Lock()
-
-    @classmethod
-    async def store_text(cls, message: str, user_identity):
-        """Store only the transcript for now"""
-        async with cls.lock:
-            cls.memory.append((message, user_identity))
-
-    @classmethod
-    async def get_memory(cls):
-        async with cls.lock:
-            for e in cls.memory:
-                yield e
-
-
-class SummaryService:
-    db = Database
-    model_name = "gemini-3.8-flash"
-    aclient = genai.Client().aio
-
-    def __init__(self, room):
-        self.room = room
-        self.current_summary = ""
-        # In memory for now
-
-    async def summarize(self):
-        prompt = """
-            Update the summary of an ongoing conversation.
-            You will use the previous summary computed and the last several messages.
-
-            Rules:
-                - Use the same language as in the conversation.
-                - The summary should have three sentences at most.
-"""
-
-        if self.current_summary:
-            prompt += f"Current Summary {self.current_summary}\n"
-
-        async for message, user in self.db.get_memory():
-            prompt += f"{user}: {message}\n"
-
-        response = await self.aclient.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                system_instruction="You are an assistant in charge of summarizing ongoing conversations.",
-                temperature=0.7,
-            ),
-        )
-        self.db.memory = []
-        self.current_summary = response.text or ""
-
-        return self.current_summary
-
-    async def check_summary(self):
-        if len(self.db.memory) < 10:
-            return None
-        return await self.summarize()
-
-    async def publish_chat(
-        self,
-        message,
-        destination_identities: list[str] | None = None,
-    ) -> None:
-        """Send a chat message to the room as the agent itself."""
-        logger.info(
-            "Publishing chat as %s: %s",
-            self.room.local_participant.identity,
-        )
-        await self.room.local_participant.send_text(
-            message,
-            topic="lk.chat",
-            destination_identities=destination_identities,  # None = everyone
-        )
-
-    async def run(self):
-        while True:
-            await asyncio.sleep(10)
-            logger.info("Checking summary %s", self.current_summary)
-            summary = await self.check_summary()
-            if summary:
-                await self.publish_chat(summary)
+from src.messages import AudioStreamMessage, TranscriptionMessage
 
 
 class BridgeService:
-    db = Database
-
     def __init__(self, room, track, participant):
         self.room = room
         self.track = track
@@ -123,6 +34,36 @@ class BridgeService:
         if self._stream is not None:
             await self._stream.aclose()
             self._stream = None
+
+    async def produce_audio(self, out: asyncio.Queue[AudioStreamMessage]) -> None:
+        """Put the track's PCM frames on `out`; shuts it down when the track ends."""
+        try:
+            seq = 0
+            async for ev in self.get_audio_stream():
+                await out.put(
+                    AudioStreamMessage(
+                        track_sid=self.track.sid,
+                        participant_identity=self.participant.identity,
+                        seq=seq,
+                        pcm=bytes(ev.frame.data),
+                        sample_rate=ev.frame.sample_rate,
+                        channels=ev.frame.num_channels,
+                    )
+                )
+                seq += 1
+        finally:
+            # Track ended (or we were cancelled): the STT side flushes and finishes.
+            out.shutdown()
+            await self.close_audio_stream()
+
+    async def consume_transcripts(self, inp: asyncio.Queue[TranscriptionMessage]) -> None:
+        """Publish transcripts from `inp` until the STT side shuts it down."""
+        while True:
+            try:
+                msg = await inp.get()
+            except asyncio.QueueShutDown:
+                return
+            await self.publish_transcript(msg.text, final=msg.final)
 
     async def publish_transcript(
         self,
@@ -159,12 +100,6 @@ class BridgeService:
             await writer.write(transcript_text)
         finally:
             await writer.aclose()
-
-        if transcript_text and self.db:
-            await self.db.store_text(
-                transcript_text,
-                self.participant.identity,
-            )
 
     async def publish_chat(
         self,
