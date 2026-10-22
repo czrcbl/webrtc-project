@@ -10,14 +10,15 @@ from src.services.transcription_service import BaseTranscriptionService
 class WhisperService(BaseTranscriptionService):
     """Client for services/stt_server; the protocol is described in src/messages.py."""
 
+    PROVIDER = "whisper"
     END_OF_AUDIO = EOF
 
     @property
     def url(self) -> str:
         params = StreamParams(
             language=settings.stt_language,
-            participant=self.bridge_service.participant.identity,
-            track_id=self.bridge_service.track.sid,
+            participant=self.participant_identity,
+            track_id=self.track_sid,
         )
         return f"{settings.stt_ws_url}?{urlencode(params.model_dump(exclude_none=True))}"
 
@@ -34,11 +35,11 @@ class WhisperService(BaseTranscriptionService):
 
             logger.info(
                 "transcript track=%s final=%s: %s",
-                self.bridge_service.track.sid,
+                self.track_sid,
                 msg.final,
                 msg.text,
             )
 
             # A final is one committed segment and closes the caption line; the
             # partial that follows is the uncommitted tail and opens the next.
-            await self.bridge_service.publish_transcript(msg.text, final=msg.final)
+            await self.emit(msg.text, final=msg.final)
