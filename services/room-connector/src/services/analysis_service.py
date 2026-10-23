@@ -1,9 +1,8 @@
 import asyncio
 
+from anthropic import AsyncAnthropic
 from google import genai
 from src.logger import logger
-from src.messages import TranscriptionMessage
-from anthropic import AsyncAnthropic
 
 # Finals waiting to be stored; past this the oldest are dropped (see Broadcaster).
 INBOX_SIZE = 500
@@ -92,19 +91,19 @@ class AnthropicClient:
 
 
 class AnalysisService:
-    # TODO: review client lifecycle
-    # No timeout and no retries by default: a stalled request would block the
-    # summarizer forever.
-
-    def __init__(self, room, transcript_q):
+    def __init__(self, room, transcript_q=None):
         self.room = room
-        self.transcript_q = transcript_q
+        self.transcript_q = transcript_q or asyncio.Queue()
         self.current_summary = ""
         self.transcripts: list = []
         # Finals not summarized yet; kept across windows so none is lost.
         self.pending: list = []
         self.current_summary = ""
         self.client = AnthropicClient()
+
+    @property
+    def queue(self):
+        return self.transcript_q
 
     async def summarize(self):
         while True:

@@ -1,11 +1,10 @@
 import asyncio
 import secrets
 
-from google import genai
 from livekit import rtc
 from src.config import settings
 from src.logger import logger
-from src.messages import AudioStreamMessage, TranscriptionMessage
+from src.messages import AudioStreamMessage
 
 
 class BridgeService:

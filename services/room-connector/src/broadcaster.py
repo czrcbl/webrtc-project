@@ -15,6 +15,10 @@ class Broadcaster:
         self._subscribers.append(queue)
         return queue
 
+    def register(self, queue):
+        """A queue to the broadcaster"""
+        self._subscribers.append(queue)
+
     async def put(self, item) -> None:
         self.put_nowait(item)
 

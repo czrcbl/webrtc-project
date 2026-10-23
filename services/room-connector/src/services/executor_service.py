@@ -1,14 +1,13 @@
-from os import sync
 import asyncio
 
 from livekit import rtc
 from src.broadcaster import Broadcaster
 from src.config import settings
-from src.messages import AudioStreamMessage, TranscriptionMessage, ChatMessage
+from src.messages import AudioStreamMessage, ChatMessage
+from src.services.analysis_service import AnalysisService
 from src.services.bridge_service import BridgeService
 from src.services.deepgram_service import DeepgramService
 from src.services.whisper_service import WhisperService
-from src.services.analysis_service import AnalysisService
 
 # 50 frames of send_chunk_ms (100 ms by default) = ~5 s of audio before the
 # Bridge waits on a slow STT connection.
@@ -31,11 +30,13 @@ class ExecutorService:
         room: rtc.Room,
         track: rtc.Track,
         participant: rtc.RemoteParticipant,
+        analysis_service: AnalysisService,
         audio_queue_size: int = AUDIO_QUEUE_SIZE,
     ):
 
         self.audio_q: asyncio.Queue[AudioStreamMessage] = asyncio.Queue(maxsize=audio_queue_size)
         self.transcripts_broad: Broadcaster = Broadcaster()
+        self.transcripts_broad.register(analysis_service.queue)
         self.bridge = BridgeService(
             room,
             track,
@@ -53,4 +54,3 @@ class ExecutorService:
             tg.create_task(self.bridge.produce_audio(self.audio_q))
             tg.create_task(self.stt.run())
             tg.create_task(self.bridge.consume_transcripts())
-            tg.create_task(self.analysis_service.summarize())

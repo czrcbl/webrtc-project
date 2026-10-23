@@ -21,6 +21,7 @@ import sys
 from livekit import api, rtc
 from src.config import settings
 from src.logger import logger
+from src.services.analysis_service import AnalysisService
 from src.services.executor_service import ExecutorService
 from src.utils import make_token
 
@@ -29,9 +30,10 @@ async def bridge(
     room: rtc.Room,
     track: rtc.Track,
     participant: rtc.RemoteParticipant,
+    analysis_service: AnalysisService,
 ) -> None:
 
-    await ExecutorService(room, track, participant).run()
+    await ExecutorService(room, track, participant, analysis_service).run()
 
 
 async def list_room_names() -> list[str]:
@@ -55,6 +57,17 @@ async def main(room_name: str | None) -> None:
     bridges: dict[str, asyncio.Task] = {}
     stop = asyncio.Event()
 
+    def on_task_done(task: asyncio.Task) -> None:
+        if not task.cancelled() and task.exception():
+            logger.error("AnalysisService failed", exc_info=task.exception())
+
+    # Transcripts from all tracks are analyzed together
+    analysis_service = AnalysisService(room)
+    analysis_task = asyncio.create_task(
+        analysis_service.summarize(),
+    )
+    analysis_task.add_done_callback(on_task_done)
+
     def subscribe_if_audio(pub: rtc.RemoteTrackPublication) -> None:
         if pub.kind == rtc.TrackKind.KIND_AUDIO and not pub.subscribed:
             pub.set_subscribed(True)
@@ -74,7 +87,7 @@ async def main(room_name: str | None) -> None:
         if track.kind != rtc.TrackKind.KIND_AUDIO or track.sid in bridges:
             return
         logger.info("subscribed to audio from %s (%s)", p.identity, track.sid)
-        task = asyncio.create_task(bridge(room, track, p))
+        task = asyncio.create_task(bridge(room, track, p, analysis_service))
         task.add_done_callback(lambda t, sid=track.sid: on_bridge_done(sid, t))
         bridges[track.sid] = task
 
@@ -114,9 +127,12 @@ async def main(room_name: str | None) -> None:
 
     await stop.wait()
 
-    for task in list(bridges.values()):
+    tasks = list(bridges.values())
+    tasks.append(analysis_task)
+
+    for task in tasks:
         task.cancel()
-    await asyncio.gather(*bridges.values(), return_exceptions=True)
+    await asyncio.gather(*tasks, return_exceptions=True)
     await room.disconnect()
 
 
