@@ -54,8 +54,8 @@ class DeepgramService(BaseTranscriptionService):
             self._partial_shown = True
 
     async def _end_utterance(self) -> None:
-        # The final replaces the partials under the same segment; "" only to close
-        # a caption whose words Deepgram dropped on finalising.
+        # The final replaces the partials under the same segment
+        # "" only to close a caption whose words Deepgram dropped on finalising.
         text = " ".join(self._chunks)
         if text or self._partial_shown:
             await self.emit(text, final=True)
@@ -73,7 +73,9 @@ class DeepgramService(BaseTranscriptionService):
             if kind == "Results":
                 alternatives = (data.get("channel") or {}).get("alternatives") or []
                 transcript = alternatives[0].get("transcript", "") if alternatives else ""
+                # End of segment
                 is_final = bool(data.get("is_final"))
+
                 speech_final = bool(data.get("speech_final"))
 
                 logger.info(
@@ -83,13 +85,12 @@ class DeepgramService(BaseTranscriptionService):
                     speech_final,
                     transcript,
                 )
-
-                # Partials are only displayed, never stored: the next ones (and
-                # the final that locks them) cover the same audio.
                 if not is_final:
+                    # Deepgram partials are not stored
                     await self._show_partial(transcript)
                     continue
                 if transcript:  # empty finals are silence
+                    # Deepgrem is_final marks end of segment, can still be incremented
                     self._chunks.append(transcript)
                 if speech_final:
                     await self._end_utterance()
