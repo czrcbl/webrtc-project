@@ -30,6 +30,10 @@ class DeepgramService(BaseTranscriptionService):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Deepgram's is_final locks a chunk of audio, not an utterance: keep the
+        # locked chunks until speech_final / UtteranceEnd and emit them as one final.
+        self._chunks: list[str] = []
+        self._partial_shown = False  # a caption is open and must be closed by a final
 
     @property
     def headers(self):
@@ -43,32 +47,59 @@ class DeepgramService(BaseTranscriptionService):
             await self._ws.close()
             self._ws = None
 
-    async def receive_results(self, ws) -> None:
-        """Downlink: turn service messages into LiveKit text streams. Returns on done."""
-        # Avoid reusing segment
+    async def _show_partial(self, interim: str = "") -> None:
+        text = " ".join([*self._chunks, interim]).strip()
+        if text:
+            await self.emit(text, final=False)
+            self._partial_shown = True
 
+    async def _end_utterance(self) -> None:
+        # The final replaces the partials under the same segment; "" only to close
+        # a caption whose words Deepgram dropped on finalising.
+        text = " ".join(self._chunks)
+        if text or self._partial_shown:
+            await self.emit(text, final=True)
+        self._chunks.clear()
+        self._partial_shown = False
+
+    async def receive_results(self, ws) -> None:
+        """Downlink: emit partials and one final per utterance. Returns on done."""
         async for msg in ws:
             if isinstance(msg, bytes):
                 continue
             data = json.loads(msg)
-            # logger.info(f"Received {data}")
+            kind = data.get("type")
 
-            if data.get("type") == "Results":
+            if kind == "Results":
                 alternatives = (data.get("channel") or {}).get("alternatives") or []
-                transcript = alternatives[0].get("transcript") if alternatives else ""
+                transcript = alternatives[0].get("transcript", "") if alternatives else ""
                 is_final = bool(data.get("is_final"))
+                speech_final = bool(data.get("speech_final"))
 
                 logger.info(
                     "transcript track=%s is_final=%s speech_final=%s: %s",
                     self.track_sid,
                     is_final,
-                    data.get("speech_final"),
+                    speech_final,
                     transcript,
                 )
 
-                if is_final:
-                    await self.emit(transcript, final=True)
-                elif transcript:
-                    await self.emit(transcript, final=False)
+                # Partials are only displayed, never stored: the next ones (and
+                # the final that locks them) cover the same audio.
+                if not is_final:
+                    await self._show_partial(transcript)
+                    continue
+                if transcript:  # empty finals are silence
+                    self._chunks.append(transcript)
+                if speech_final:
+                    await self._end_utterance()
+                else:
+                    await self._show_partial()  # locked so far, utterance continues
+
+            elif kind == "UtteranceEnd":
+                await self._end_utterance()
             else:
-                logger.info("Non Result message %s", data.get("type"))
+                logger.info("Non Result message %s", kind)
+
+        # CloseStream flushed the last finals and Deepgram closed: commit the tail.
+        await self._end_utterance()
