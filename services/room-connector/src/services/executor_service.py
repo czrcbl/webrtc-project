@@ -47,7 +47,6 @@ class ExecutorService:
 
         stt_cls = WhisperService if settings.stt_provider == "whisper" else DeepgramService
         self.stt = stt_cls(track.sid, participant.identity, self.audio_q, self.transcripts_broad)
-        self.analysis_service = AnalysisService(room, self.transcripts_broad.subscribe())
 
     async def run(self) -> None:
         async with asyncio.TaskGroup() as tg:

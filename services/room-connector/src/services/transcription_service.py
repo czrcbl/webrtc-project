@@ -74,5 +74,6 @@ class BaseTranscriptionService:
                         t.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
         finally:
-            # No more transcripts: the Bridge drains what is queued and finishes.
-            self.transcripts_out.shutdown()
+            # Avoid killing the broadcaster and leaving the Room with no transcripts
+            if not isinstance(self.transcripts_out, Broadcaster):
+                self.transcripts_out.shutdown()
