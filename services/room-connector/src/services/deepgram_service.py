@@ -24,6 +24,7 @@ DG_URL = "wss://api.deepgram.com/v1/listen?" + urlencode(DG_PARAMS)
 
 
 class DeepgramService(BaseTranscriptionService):
+    PROVIDER = "deepgram"
     URL = DG_URL
     END_OF_AUDIO = json.dumps({"type": "CloseStream"})
 
@@ -59,21 +60,15 @@ class DeepgramService(BaseTranscriptionService):
 
                 logger.info(
                     "transcript track=%s is_final=%s speech_final=%s: %s",
-                    self.bridge_service.track.sid,
+                    self.track_sid,
                     is_final,
                     data.get("speech_final"),
                     transcript,
                 )
 
                 if is_final:
-                    await self.bridge_service.publish_transcript(
-                        transcript,
-                        final=True,
-                    )
+                    await self.emit(transcript, final=True)
                 elif transcript:
-                    await self.bridge_service.publish_transcript(
-                        transcript,
-                        final=False,
-                    )
+                    await self.emit(transcript, final=False)
             else:
                 logger.info("Non Result message %s", data.get("type"))

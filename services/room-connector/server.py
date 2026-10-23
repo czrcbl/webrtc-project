@@ -21,19 +21,18 @@ import sys
 from livekit import api, rtc
 from src.config import settings
 from src.logger import logger
-from src.services.bridge_service import BridgeService, SummaryService
-from src.services.deepgram_service import DeepgramService
-from src.services.whisper_service import WhisperService
+from src.services.analysis_service import SummaryService
+from src.services.executor_service import ExecutorService
 from src.utils import make_token
 
 
-async def bridge(room: rtc.Room, track: rtc.Track, participant: rtc.RemoteParticipant) -> None:
+async def bridge(
+    room: rtc.Room,
+    track: rtc.Track,
+    participant: rtc.RemoteParticipant,
+) -> None:
 
-    bridge_service = BridgeService(room, track, participant)
-    service_cls = WhisperService if settings.stt_provider == "whisper" else DeepgramService
-    stt_service = service_cls(bridge_service)
-
-    await stt_service.run()
+    await ExecutorService(room, track, participant).run()
 
 
 async def list_room_names() -> list[str]:
@@ -52,6 +51,8 @@ async def list_room_names() -> list[str]:
 async def main(room_name: str | None) -> None:
 
     room = rtc.Room()
+    # Before connecting: every bridge feeds its finals into the summary inbox.
+    summary_service = SummaryService(room)
     # A bridge per track connected
     bridges: dict[str, asyncio.Task] = {}
     stop = asyncio.Event()
@@ -92,10 +93,10 @@ async def main(room_name: str | None) -> None:
         logger.info("disconnected from room: %s", reason)
         stop.set()
 
-    # auto_subscribe=False: we pick the audio tracks ourselves and skip video.
     if room_name is None:
         room_name = (await list_room_names())[0]
 
+    # auto_subscribe=False: we pick the audio tracks ourselves and skip video.
     await room.connect(
         settings.livekit_url,
         make_token(room_name),
@@ -113,7 +114,6 @@ async def main(room_name: str | None) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    summary_service = SummaryService(room)
     # TODO: add done callback
     smry = asyncio.create_task(summary_service.run())
 

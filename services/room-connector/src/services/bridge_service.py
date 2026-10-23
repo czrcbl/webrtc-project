@@ -9,10 +9,11 @@ from src.messages import AudioStreamMessage, TranscriptionMessage
 
 
 class BridgeService:
-    def __init__(self, room, track, participant):
+    def __init__(self, room, track, participant, transcript_q):
         self.room = room
         self.track = track
         self.participant = participant
+        self.transcript_q = transcript_q
 
         self._stream: rtc.AudioStream | None = None
         # TODO: nonce might be unnecessary,
@@ -56,11 +57,11 @@ class BridgeService:
             out.shutdown()
             await self.close_audio_stream()
 
-    async def consume_transcripts(self, inp: asyncio.Queue[TranscriptionMessage]) -> None:
+    async def consume_transcripts(self) -> None:
         """Publish transcripts from `inp` until the STT side shuts it down."""
         while True:
             try:
-                msg = await inp.get()
+                msg = await self.transcript_q.get()
             except asyncio.QueueShutDown:
                 return
             await self.publish_transcript(msg.text, final=msg.final)

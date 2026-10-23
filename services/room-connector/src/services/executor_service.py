@@ -30,22 +30,24 @@ class ExecutorService:
         room: rtc.Room,
         track: rtc.Track,
         participant: rtc.RemoteParticipant,
-        summary_inbox: asyncio.Queue[TranscriptionMessage] | None = None,
         audio_queue_size: int = AUDIO_QUEUE_SIZE,
     ):
-        self.bridge = BridgeService(room, track, participant)
+
         self.audio_q: asyncio.Queue[AudioStreamMessage] = asyncio.Queue(maxsize=audio_queue_size)
-        self.transcripts: Broadcaster[TranscriptionMessage] = Broadcaster()
-        self.transcript_q = self.transcripts.subscribe()
-        if summary_inbox is not None:
-            self.transcripts.subscribe(summary_inbox, accept=lambda m: m.final)
+        self.transcripts_broad: Broadcaster = Broadcaster()
+        self.bridge = BridgeService(
+            room,
+            track,
+            participant,
+            self.transcripts_broad.subscribe(),
+        )
         self.comment_q: asyncio.Queue[ChatMessage] = asyncio.Queue()
 
         stt_cls = WhisperService if settings.stt_provider == "whisper" else DeepgramService
-        self.stt = stt_cls(track.sid, participant.identity, self.audio_q, self.transcripts)
+        self.stt = stt_cls(track.sid, participant.identity, self.audio_q, self.transcripts_broad)
 
     async def run(self) -> None:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self.bridge.produce_audio(self.audio_q))
             tg.create_task(self.stt.run())
-            tg.create_task(self.bridge.consume_transcripts(self.transcript_q))
+            tg.create_task(self.bridge.consume_transcripts())
