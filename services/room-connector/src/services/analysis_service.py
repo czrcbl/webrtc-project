@@ -3,6 +3,7 @@ import asyncio
 from google import genai
 from src.logger import logger
 from src.messages import TranscriptionMessage
+from anthropic import AsyncAnthropic
 
 # Finals waiting to be stored; past this the oldest are dropped (see Broadcaster).
 INBOX_SIZE = 500
@@ -45,43 +46,105 @@ async def publish_chat(
     )
 
 
-class AnalysisService:
+class GeminiClient:
     model_name = "gemini-3.8-flash"
+
+    def __init__(self):
+        self.client = genai.Client(
+            http_options=genai.types.HttpOptions(
+                timeout=30_000,  # ms, per attempt
+                retry_options=genai.types.HttpRetryOptions(attempts=3),  # 408/429/5xx, backoff
+            )
+        ).aio
+
+    async def get_completion(self, prompt: str, system=None):
+        response = await self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                # system_instruction="You are an assistant in charge of summarizing ongoing conversations."
+                temperature=0.7,
+            ),
+        )
+        return response.text or ""
+
+
+class AnthropicClient:
+    model_name = "claude-haiku-5-5"
+
+    def __init__(self):
+        self.client = AsyncAnthropic()
+
+    async def get_completion(self, prompt, system=None):
+        message = await self.client.messages.create(
+            model=self.model_name,
+            max_tokens=1024,
+            # Haiku 5.5 thinks by default; a short summary doesn't need it, and
+            # thinking would eat into max_tokens.
+            thinking={"type": "disabled"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        # content may hold non-text blocks (e.g. thinking): keep only the text.
+        text = "".join(b.text for b in message.content if b.type == "text")
+        if not text:
+            logger.warning("anthropic: no text in response, stop_reason=%s", message.stop_reason)
+        return text
+
+
+class AnalysisService:
     # TODO: review client lifecycle
-    aclient = genai.Client().aio
+    # No timeout and no retries by default: a stalled request would block the
+    # summarizer forever.
 
     def __init__(self, room, transcript_q):
         self.room = room
         self.transcript_q = transcript_q
         self.current_summary = ""
         self.transcripts: list = []
+        # Finals not summarized yet; kept across windows so none is lost.
+        self.pending: list = []
         self.current_summary = ""
+        self.client = AnthropicClient()
 
     async def summarize(self):
         while True:
             try:
-                transcripts = await self._pool_transcripts()
-                self.transcripts = transcripts
-                logger.info(f"summarize: extracted N {len(transcripts)}, {transcripts[:3]}")
-                summary = await self._build_summary()
+                await self._pool_transcripts()
+                if not self.pending:
+                    await publish_chat(self.room, "No new activity for user")
+                    continue
+                transcripts, self.pending = self.pending, []
+                logger.info(
+                    f"summarize: extracted N {len(self.transcripts)}, {self.transcripts[:3]}"
+                )
+                summary = await self._build_summary(transcripts)
                 await publish_chat(self.room, summary)
             except asyncio.QueueShutDown:
-                logger.exception("summarize: queue close, returning")
+                logger.info("summarize: queue closed, returning")
                 return
             # TODO: Properly handle each error
-            except:
+            # Not bare: cancellation must get through. Keep going, so one failed
+            # call doesn't end the summaries for good.
+            except Exception:
                 logger.exception("summarize: error building summary")
-                return
+                # Retry these with the next batch.
+                self.pending[:0] = transcripts
 
     async def _pool_transcripts(self):
-        transcripts = []
-        while True:
-            t = await self.transcript_q.get()
-            transcripts.append(t)
-            if len(transcripts) >= 10:
-                return transcripts
+        """Collect finals into self.pending until there are 6 or the 10 s window ends."""
+        try:
+            async with asyncio.timeout(10):
+                while len(self.pending) <= 5:
+                    t = await self.transcript_q.get()
+                    logger.info(f"summarize: transcription pooled {t}")
+                    # Committed text only: partials repeat the utterance so far, and an
+                    # empty final only closes a caption.
+                    if t.final and t.text:
+                        self.pending.append(t)
+        except TimeoutError:
+            pass
 
-    async def _build_summary(self):
+    async def _build_summary(self, transcripts):
         prompt = """
             Update the summary of an ongoing conversation.
             You will use the previous summary computed and the last several messages.
@@ -94,18 +157,10 @@ class AnalysisService:
         if self.current_summary:
             prompt += f"Current Summary {self.current_summary}\n"
 
-        for t in self.transcripts:
+        for t in transcripts:
             prompt += f"{t.participant_identity}: {t.text}\n"
 
-        response = await self.aclient.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                system_instruction="You are an assistant in charge of summarizing ongoing conversations.",
-                temperature=0.7,
-            ),
-        )
-        self.current_summary = response.text or ""
+        self.current_summary = await self.client.get_completion(prompt)
 
         return self.current_summary
 
