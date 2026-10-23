@@ -97,7 +97,9 @@ class BridgeService:
             await self.close_audio_stream()
 
     async def produce_audio(self, out: asyncio.Queue[AudioStreamMessage]) -> None:
-        if settings.environment == "dev":
+        if settings.debug_record_audio:
+            # Record all audio streams of the call
+            logger.info("produce_audio: recording audio track into file %s", self.track.sid)
             await self._produce_and_store_arudio(out)
         else:
             await self._produce_audio(out)

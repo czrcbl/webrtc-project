@@ -8,6 +8,7 @@ uv = "0.13.0"
 
 [env]
 ENVIRONMENT = "dev"
+DEBUG_RECORD_AUDIO = "false"
 _.python.venv = { path = ".venv", create = true }
 _.path = "./repos/lk_2.19.1_linux_amd64"          # add lk cli to path
 ROOM = "default"                                  # Room name used on experiments
