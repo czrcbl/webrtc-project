@@ -15,6 +15,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(frozen=True, str_strip_whitespace=True)
 
+    environment: str = "dev"
+
     livekit_url: str
     livekit_api_key: str
     livekit_api_secret: SecretStr
