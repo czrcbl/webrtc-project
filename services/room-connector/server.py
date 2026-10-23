@@ -21,7 +21,6 @@ import sys
 from livekit import api, rtc
 from src.config import settings
 from src.logger import logger
-from src.services.analysis_service import SummaryService
 from src.services.executor_service import ExecutorService
 from src.utils import make_token
 
@@ -52,7 +51,6 @@ async def main(room_name: str | None) -> None:
 
     room = rtc.Room()
     # Before connecting: every bridge feeds its finals into the summary inbox.
-    summary_service = SummaryService(room)
     # A bridge per track connected
     bridges: dict[str, asyncio.Task] = {}
     stop = asyncio.Event()
@@ -114,17 +112,11 @@ async def main(room_name: str | None) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    # TODO: add done callback
-    smry = asyncio.create_task(summary_service.run())
-
     await stop.wait()
 
     for task in list(bridges.values()):
         task.cancel()
     await asyncio.gather(*bridges.values(), return_exceptions=True)
-
-    smry.cancel()
-
     await room.disconnect()
 
 

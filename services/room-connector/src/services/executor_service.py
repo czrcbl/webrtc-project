@@ -8,6 +8,7 @@ from src.messages import AudioStreamMessage, TranscriptionMessage, ChatMessage
 from src.services.bridge_service import BridgeService
 from src.services.deepgram_service import DeepgramService
 from src.services.whisper_service import WhisperService
+from src.services.analysis_service import AnalysisService
 
 # 50 frames of send_chunk_ms (100 ms by default) = ~5 s of audio before the
 # Bridge waits on a slow STT connection.
@@ -45,9 +46,11 @@ class ExecutorService:
 
         stt_cls = WhisperService if settings.stt_provider == "whisper" else DeepgramService
         self.stt = stt_cls(track.sid, participant.identity, self.audio_q, self.transcripts_broad)
+        self.analysis_service = AnalysisService(room, self.transcripts_broad.subscribe())
 
     async def run(self) -> None:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self.bridge.produce_audio(self.audio_q))
             tg.create_task(self.stt.run())
             tg.create_task(self.bridge.consume_transcripts())
+            tg.create_task(self.analysis_service.summarize())

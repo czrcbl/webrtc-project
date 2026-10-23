@@ -39,3 +39,15 @@ class Broadcaster:
                 queue.put_nowait(item)
         except asyncio.QueueShutDown:
             pass  # that consumer is gone; the others still get the item
+
+
+# class Broker:
+#     def __init__(self):
+#         self._subscriptions = {}
+
+#     def subscribe(self, topic_name: str):
+#         """Get a queue for a topic"""
+#         if topic_name not in self._subscriptions:
+#             queue = asyncio.Queue()
+#             self._subscriptions[topic_name] = queue
+#             return queue
