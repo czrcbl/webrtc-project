@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(frozen=True, str_strip_whitespace=True)
 
     environment: str = "dev"
-    debug_record_audio: str = "false"
+    debug_record_audio: bool = False
 
     livekit_url: str
     livekit_api_key: str
