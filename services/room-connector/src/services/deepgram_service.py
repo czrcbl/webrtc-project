@@ -18,6 +18,8 @@ DG_PARAMS = {
     "interim_results": str(settings.deepgram_interim_results).lower(),
     "smart_format": str(settings.deepgram_smart_format).lower(),
     "endpointing": settings.deepgram_endpointing_ms,
+    # Checks for gaps between words.
+    # Fallback for noisy settings.
     "utterance_end_ms": settings.deepgram_utterance_end_ms,
 }
 DG_URL = "wss://api.deepgram.com/v1/listen?" + urlencode(DG_PARAMS)
