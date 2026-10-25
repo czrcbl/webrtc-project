@@ -38,7 +38,7 @@ class BridgeService:
             await self._stream.aclose()
             self._stream = None
 
-    async def _produce_and_store_arudio(self, out: asyncio.Queue[AudioStreamMessage]) -> None:
+    async def _produce_and_store_audio(self, out: asyncio.Queue[AudioStreamMessage]) -> None:
         """Put the track's PCM frames on `out`; shuts it down when the track ends."""
         # DEBUG: dump what we send to the STT, to listen to it later.
         dump_dir = Path(".cache/audio")
@@ -100,7 +100,7 @@ class BridgeService:
         if settings.debug_record_audio:
             # Record all audio streams of the call
             logger.info("produce_audio: recording audio track into file %s", self.track.sid)
-            await self._produce_and_store_arudio(out)
+            await self._produce_and_store_audio(out)
         else:
             await self._produce_audio(out)
 
