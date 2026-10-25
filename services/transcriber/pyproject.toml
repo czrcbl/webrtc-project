@@ -1,0 +1,16 @@
+[project]
+name = "transcriber"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "livekit-agents>=1.8.6",
+    "livekit>=1.1.20",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.10",
+    "websockets<17",
+    "google-genai>=2.31.0",
+    "anthropic>=1.15.0",
+]
+
+[tool.uv]
+package = false
