@@ -6,6 +6,7 @@ mise.local.toml
 .ai-jail
 temp/
 CLAUDE.md
+.env
 
 .venv/
 __pycache__/

@@ -37,6 +37,8 @@ The docker-compose file will spin LiveKit using the official image and build Mee
 docker compose up
 # podman compose up
 ```
+Meet web UI is available at http://localhost:3000.
+
 Install python deps with uv:
 ```bash
 uv sync --package transcriber
