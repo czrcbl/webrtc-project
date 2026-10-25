@@ -5,62 +5,68 @@ pnpm = "12.13.0"
 python = "3.14"
 tmux = "3.7c"
 uv = "0.13.0"
+"github:livekit/livekit-cli" = "2.19.2"
 
 [env]
+_.python.venv = { path = ".venv", create = true } # Auto activate python env
+_.path = "./repos/livekit-cli/bin"                # add lk cli to path
+
 ENVIRONMENT = "dev"
 DEBUG_RECORD_AUDIO = "false"
-_.python.venv = { path = ".venv", create = true }
-_.path = "./repos/lk_2.19.1_linux_amd64"          # add lk cli to path
-ROOM = "default"                                  # Room name used on experiments
-TESTER_PARTICIPANT_A = "Cezar"
-TESTER_PARTICIPANT_B = "Razec"
 LIVEKIT_URL = "http://localhost:7880"
 LIVEKIT_API_KEY = "devkey"
 LIVEKIT_API_SECRET = "secret"
-WHISPER_MODEL = "large-v3-turbo"                  # Better larger version: "large-v3-turbo"
+
+WHISPER_MODEL = "large-v3-turbo"                 # Better larger version: "large-v3-turbo"
 WHISPER_SAMPLE_RATE = 16_000
-# WHISPER_COMPUTE_TYPE=float16           
-WHISPER_COMPUTE_TYPE = "int8_float16"            # Reduce memory
+WHISPER_COMPUTE_TYPE = "int8_float16"            # Reduce memory. ex: float16 
 STT_WS_URL = "ws://localhost:8000/ws/transcribe"
 STT_LANGUAGE = "pt"                              # empty -> auto-detect; set "en" / "pt" to pin
-# STT_PROVIDER = "whisper"
-STT_PROVIDER = "deepgram"
+
+STT_PROVIDER = "deepgram" # "whisper"
 
 [tasks.bootstrap]
-description = "Prepare repo for development"
-run = """
-    git clone git@github.com:czrcbl/meet.git repos/meet \
-    git clone https://github.com/livekit/livekit repos/livekit
+description = """Prepare repo for development.
+  Get all deps and run local copies.
 """
+run = """
+set -e
+mkdir -p repos bin
 
+[ -d repos/meet ]        || git clone git@github.com:czrcbl/meet.git repos/meet
+[ -d repos/livekit ]     || git clone https://github.com/livekit/livekit repos/livekit
+
+(cd repos/livekit && ./bootstrap.sh && mage)
+"""
 
 [tasks.server-dev]
 description = "Run Livekit Server"
-run = "./repos/livekit/bin/livekit-server --dev"
+run = "./repos/livekit/bin/livekit-server --dev"  # --dev: Set up the api key and secret for the values o env
 
 [tasks.meet-dev]
 description = "Run Meet server"
-run = "cd repos/meet && pnpm dev"
+run = "cd repos/meet && pnpm dev"  # dev: Set up the api key and secret for the values o env
+
 
 [tasks.stt-server]
+description = """
+  Start a FastAPI server. It serves a Whisper model through a websocket.
+  The command has a path hack in order to get Nvidia related deps from project's python env.
+"""
 run = """
   LD_LIBRARY_PATH="$(python -c 'import importlib; print(":".join(list(importlib.import_module(m).__path__)[0] for m in ("nvidia.cublas.lib","nvidia.cudnn.lib")))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   WHISPER_DEVICE=cuda uv run python -m uvicorn services.stt_server.app:app --host 0.0.0.0 --port 8000 --reload
 """
 
-
 [tasks.transcriber]
 description = "Run the room transcriber"
-run = "uv run services/room-connector/server.py"
+run = "uv run services/transcriber/server.py"
 
 [tasks.transcriber-en]
-run = "STT_LANGUAGE=en DEEPGRAM_LANGUAGE=en uv run services/room-connector/server.py"
+description = "Run the room transcriber with english preset"
+run = "STT_LANGUAGE=en DEEPGRAM_LANGUAGE=en uv run services/transcriber/server.py"
 
-description = "Run the room transcriber"
+
 [tasks.multi-sample]
 description = "Join N fake speakers publishing speech: [--turns] [ROOM] [SPEAKERS] [LOOPS]"
 run = "bash scripts/run_multi_sample.sh"
-
-[tasks.transcriber-agent]
-description = "Run the room transcriber agent"
-run = "uv run services/room-connector/agent.py dev"
