@@ -21,8 +21,6 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Handed to the browser as serverUrl, so it must resolve on the host
-      # rather than inside the compose network.
       LIVEKIT_URL: "${LIVEKIT_URL}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"

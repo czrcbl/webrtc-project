@@ -43,6 +43,9 @@ Install python deps with uv:
 ```bash
 uv sync --package transcriber
 ``` 
+Before starting the transcriber, have a room running in Meet.
+The transcriber will join it automatically as a hidden participant 
+and will start feeding the transcriptions and summaries.
 
 Running the transcriber server:
 ```bash
