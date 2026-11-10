@@ -6,6 +6,7 @@ python = "3.14"
 tmux = "3.7c"
 uv = "0.13.0"
 "github:livekit/livekit-cli" = "2.19.2"
+dotnet = "10.0.403"
 
 [env]
 _.python.venv = { path = ".venv", create = true } # Auto activate python env
