@@ -125,17 +125,13 @@ public class SessionManager(string roomId)
             executorTasks.Add(execTask);
         };
 
-        await Task.WhenAll(executorTasks);
-
-
-
-
         while (true)
         {
             try
             {
-                Console.WriteLine("I am Running!!!");
-                await Task.Delay(5000);
+                Console.WriteLine("I am Running!!! Waiting for tasks");
+                // await Task.Delay(5000);
+                await Task.WhenAll(executorTasks);
             }
             // TODO: Define errors
             catch (Exception e)

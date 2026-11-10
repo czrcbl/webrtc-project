@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Deepgram" Version="7.3.1" />
     <PackageReference Include="Livekit.Rtc.Dotnet" Version="0.1.7" />
     <PackageReference Include="Livekit.Server.Sdk.Dotnet" Version="1.2.6" />
   </ItemGroup>
