@@ -38,5 +38,6 @@ class Settings(BaseSettings):
     deepgram_endpointing_ms: int = Field(300, ge=10)  # silence before Deepgram marks speech_final
     deepgram_utterance_end_ms: int = Field(1000, ge=1000)  # word gap before UtteranceEnd
 
+    anthropic_api_key: SecretStr = Field(validation_alias="ANTHROPIC_API_KEY_LOCAL")
 
 settings = Settings()

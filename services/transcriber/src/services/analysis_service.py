@@ -3,6 +3,7 @@ import asyncio
 from anthropic import AsyncAnthropic
 from google import genai
 from src.logger import logger
+from src.config import settings
 
 # Finals waiting to be stored; past this the oldest are dropped (see Broadcaster).
 INBOX_SIZE = 500
@@ -72,7 +73,7 @@ class AnthropicClient:
     model_name = "claude-haiku-5-5"
 
     def __init__(self):
-        self.client = AsyncAnthropic()
+        self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     async def get_completion(self, prompt, system=None):
         message = await self.client.messages.create(
