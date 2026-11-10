@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>transcriber_net</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Livekit.Rtc.Dotnet" Version="0.1.7" />
+    <PackageReference Include="Livekit.Server.Sdk.Dotnet" Version="1.2.6" />
+  </ItemGroup>
+
+</Project>
