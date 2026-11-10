@@ -16,7 +16,8 @@ ENVIRONMENT = "dev"
 DEBUG_RECORD_AUDIO = "false"
 LIVEKIT_URL = "http://localhost:7880"
 LIVEKIT_API_KEY = "devkey"
-LIVEKIT_API_SECRET = "secret"
+# LIVEKIT_API_SECRET = "secret"  # Bypass dotnet sdk limitation, secret is required to have 256 bits at least
+LIVEKIT_API_SECRET = "a725efc3a6a7b2cc994038c96f89024818f8d09f2bdcc4f4a92e9005fcbf254c77485cf9cce2310c3f7e7a484e63dde8c942c998d6554aa983d179968ea0a995"
 
 WHISPER_MODEL = "large-v3-turbo"                 # Better larger version: "large-v3-turbo"
 WHISPER_SAMPLE_RATE = 16_000
@@ -42,7 +43,7 @@ mkdir -p repos bin
 
 [tasks.server-dev]
 description = "Run Livekit Server"
-run = "./repos/livekit/bin/livekit-server --dev"  # --dev: Set up the api key and secret for the values o env
+run = "./repos/livekit/bin/livekit-server --dev  --keys \"devkey: $LIVEKIT_API_SECRET\""  # --dev: Set up the api key and secret for the values o env
 
 [tasks.meet-dev]
 description = "Run Meet server"
