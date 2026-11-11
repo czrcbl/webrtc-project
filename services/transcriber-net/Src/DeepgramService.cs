@@ -65,6 +65,7 @@ public class DeepgramService
         await foreach (var chunk in _stream)
         {
             // Console.Write($"{chunk.Frame.DataArray.Length}");
+            Send(chunk.Frame.DataBytes);
 
         }
         await StopAsync();

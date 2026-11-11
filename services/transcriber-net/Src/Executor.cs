@@ -20,6 +20,7 @@ public class Executor(Room room, Participant participant, Track track)
         var deepgramService = new DeepgramService(stream);
 
         await deepgramService.StartAsync();
+        await deepgramService.RunAsync();
 
     }
 }
