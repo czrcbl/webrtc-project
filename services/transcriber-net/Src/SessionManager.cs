@@ -11,6 +11,8 @@ public class SessionManager(string roomId)
     // TODO: check the 'lifecycle' of the input var Ref: CS9124
     private readonly string _roomId = roomId;
     public Task? WorkerTask;
+
+    private readonly List<Task> _executorTasks = new List<Task>();
     public CancellationTokenSource CancellationSource = new CancellationTokenSource();
 
     private static bool IsAudioPub(Rtc.TrackPublication publication)
@@ -34,46 +36,8 @@ public class SessionManager(string roomId)
         return true;
     }
 
-    public async Task<Task> RunAsync()
+    private void RegisterCallbacks(Rtc.Room roomRtc)
     {
-        // Wrapper to keep a reference the task on the manager
-        WorkerTask = RunWorkerAsync(CancellationSource.Token);
-        return WorkerTask;
-    }
-
-    private async Task RunWorkerAsync(CancellationToken ct)
-    {
-        // TODO: Recovery. Restart executor on error if track still exists;
-
-        Console.WriteLine($"Room ID: {_roomId}");
-
-        List<Task> executorTasks = new List<Task>();
-
-        var roomRtc = new Rtc.Room();
-        var token = LiveKitUtils.MintAgentToken(_roomId);
-        await roomRtc.ConnectAsync(
-            Configs.liveKitUrl,
-            token,
-            new Rtc.RoomOptions { AutoSubscribe = false }  // Check wether it's audio
-        );
-
-        Console.WriteLine("Room connected");
-
-        foreach (var (pId, participant) in roomRtc.RemoteParticipants)
-        {
-            Console.WriteLine($"Participant {pId}");
-            foreach (var (tId, trackPub) in participant.TrackPublications)
-            {
-                // Check this pattern
-                if (trackPub is Rtc.RemoteTrackPublication remote)
-                {
-
-                    Console.WriteLine("Remote Track found");
-                    SubscribeIfAudio(remote);
-                }
-            }
-        }
-
         // Callbacks
 
         // Hidden Agent keeps the room from closing
@@ -100,15 +64,54 @@ public class SessionManager(string roomId)
             var exec = new Executor(roomRtc, e.Participant, e.Track);
             var execTask = exec.RunAsync();
             Console.WriteLine($"Starting executor for track {e.Track.Sid}");
-            executorTasks.Add(execTask);
+            _executorTasks.Add(execTask);
         };
+    }
+
+    public async Task<Task> RunAsync()
+    {
+        // Wrapper to keep a reference the task on the manager
+        WorkerTask = RunWorkerAsync(CancellationSource.Token);
+        return WorkerTask;
+    }
+
+    private async Task RunWorkerAsync(CancellationToken ct)
+    {
+        // TODO: Recovery. Restart executor on error if track still exists;
+
+        Console.WriteLine($"Room ID: {_roomId}");
+
+        var roomRtc = new Rtc.Room();
+        var token = LiveKitUtils.MintAgentToken(_roomId);
+        await roomRtc.ConnectAsync(
+            Configs.liveKitUrl,
+            token,
+            new Rtc.RoomOptions { AutoSubscribe = false }  // Check wether it's audio
+        );
+
+        Console.WriteLine("Room connected");
+
+        RegisterCallbacks(roomRtc);
+
+        foreach (var (pId, participant) in roomRtc.RemoteParticipants)
+        {
+            Console.WriteLine($"Participant {pId}");
+            foreach (var (tId, trackPub) in participant.TrackPublications)
+            {
+                // Check this pattern
+                if (trackPub is Rtc.RemoteTrackPublication remote)
+                {
+
+                    Console.WriteLine("Remote Track found");
+                    SubscribeIfAudio(remote);
+                }
+            }
+        }
 
         try
         {
-            // Console.WriteLine("I am Running!!! Waiting for tasks");
-            // await Task.Delay(5000);
-
-            await Task.WhenAll(executorTasks);
+            while (_executorTasks.Count > 0 && !CancellationSource.Token.IsCancellationRequested)
+                await Task.WhenAll(_executorTasks);
         }
         // TODO: Define errors
         catch (Exception e)
