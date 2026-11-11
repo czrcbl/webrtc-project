@@ -1,56 +1,21 @@
-using System.Net.Quic;
+// using System.Net.Quic;
+// using Livekit.Server.Sdk.Dotnet;
+// using LiveKit.Rtc;
+using Rtc = LiveKit.Rtc;
+using Sdk = Livekit.Server.Sdk.Dotnet;
 
-using Livekit.Server.Sdk.Dotnet;
-
-using LiveKit.Rtc;
-// TODO: can names be changed? 
-
+/// <summary>
+/// Manages the connection with a LiveKit server Room
+/// Watches for existing and new published audio tracks
+/// </summary>
+/// <param name="roomId"></param>
 public class SessionManager(string roomId)
 {
-
     // TODO: get the id with a webhook
     // TODO: check the 'lifecycle' of the input var Ref: CS9124
-    private string _roomId = roomId;
+    private readonly string _roomId = roomId;
 
-    public static string GetUserToken(string roomName)
-    {
-
-        var token = new AccessToken(Configs.LIVEKIT_API_KEY, Configs.LIVEKIT_API_SECRET)
-        .WithIdentity(Configs.listenerIdentity)
-        .WithName(Configs.participantName)
-        .WithGrants(new VideoGrants
-        {
-            RoomJoin = true,
-            Room = roomName,
-            CanSubscribe = true,
-            CanPublish = false,
-            CanPublishData = true,
-            Hidden = true,
-        });
-        // .WithAttributes(new Dictionary<string, string> { { "mykey", "myvalue" } })
-        // .WithTtl(TimeSpan.FromHours(1));
-
-        var jwt = token.ToJwt();
-        return jwt;
-    }
-
-    public static async Task<string> GetSingleRoomAsync()
-    {
-        RoomServiceClient client = new RoomServiceClient(
-        Configs.liveKitUrl,
-        Configs.LIVEKIT_API_KEY,
-        Configs.LIVEKIT_API_SECRET
-        );
-
-        // List rooms
-        var listRoomsRequest = new ListRoomsRequest();
-        var listRoomsResponse = await client.ListRooms(listRoomsRequest);
-        Livekit.Server.Sdk.Dotnet.Room[] rooms = listRoomsResponse.Rooms.ToArray();
-        return rooms.Length == 1 ? rooms[0].Name : throw new InvalidOperationException($"Exactly one room is required to exist on the LiveKit server");
-
-    }
-
-    private static bool IsAudioPub(TrackPublication publication)
+    private static bool IsAudioPub(Rtc.TrackPublication publication)
     {
         if (publication.Kind == LiveKit.Proto.TrackKind.KindAudio)
         {
@@ -59,7 +24,7 @@ public class SessionManager(string roomId)
         return false;
     }
 
-    private static bool SubscribeIfAudio(RemoteTrackPublication publication)
+    private static bool SubscribeIfAudio(Rtc.RemoteTrackPublication publication)
     // TODO: Check why Track is null on the publication object
     {
         Console.WriteLine($"Track kind {publication.Kind}");
@@ -73,18 +38,18 @@ public class SessionManager(string roomId)
 
     public async Task RunAsync()
     {
+        // TODO: Recovery. Restart executor on error if track still exists;
 
         Console.WriteLine($"Room ID: {_roomId}");
 
         List<Task> executorTasks = new List<Task>();
 
-        var roomRtc = new LiveKit.Rtc.Room();
-        var token = GetUserToken(_roomId);
+        var roomRtc = new Rtc.Room();
+        var token = LiveKitUtils.MintAgentToken(_roomId);
         await roomRtc.ConnectAsync(
             Configs.liveKitUrl,
             token,
-            // TODO: constructor x Properties | () x {}
-            new RoomOptions { AutoSubscribe = false }  // Check wether it's audio
+            new Rtc.RoomOptions { AutoSubscribe = false }  // Check wether it's audio
         );
 
         Console.WriteLine("Room connected");
@@ -95,7 +60,7 @@ public class SessionManager(string roomId)
             foreach (var (tId, trackPub) in participant.TrackPublications)
             {
                 // Check this pattern
-                if (trackPub is RemoteTrackPublication remote)
+                if (trackPub is Rtc.RemoteTrackPublication remote)
                 {
 
                     Console.WriteLine("Remote Track found");
@@ -105,6 +70,13 @@ public class SessionManager(string roomId)
         }
 
         // Callbacks
+
+        // Hidden Agent keeps the room from closing
+        roomRtc.ParticipantDisconnected += async (_, _) =>
+        {
+            if (roomRtc.RemoteParticipants.Count == 0)
+                await roomRtc.DisconnectAsync();
+        };
 
         // Add callback pattern
         roomRtc.TrackPublished += (sender, e) =>
@@ -125,19 +97,16 @@ public class SessionManager(string roomId)
             executorTasks.Add(execTask);
         };
 
-        while (true)
+        try
         {
-            try
-            {
-                Console.WriteLine("I am Running!!! Waiting for tasks");
-                // await Task.Delay(5000);
-                await Task.WhenAll(executorTasks);
-            }
-            // TODO: Define errors
-            catch (Exception e)
-            {
-                Console.WriteLine($"Exception {e}");
-            }
+            // Console.WriteLine("I am Running!!! Waiting for tasks");
+            // await Task.Delay(5000);
+            await Task.WhenAll(executorTasks);
+        }
+        // TODO: Define errors
+        catch (Exception e)
+        {
+            Console.WriteLine($"Exception {e}");
         }
     }
 }
