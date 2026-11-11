@@ -13,9 +13,6 @@ public static class Watcher
     // TODO: review ConcurrentDictionary need
     private static readonly ConcurrentDictionary<string, SessionManager> _sessions = new ConcurrentDictionary<string, SessionManager>();
 
-
-
-
     public static async Task RoomWatcherAsync()
     {
 
