@@ -1,8 +1,4 @@
-// using System.Net.Quic;
-// using Livekit.Server.Sdk.Dotnet;
-// using LiveKit.Rtc;
 using Rtc = LiveKit.Rtc;
-using Sdk = Livekit.Server.Sdk.Dotnet;
 
 /// <summary>
 /// Manages the connection with a LiveKit server Room
@@ -14,6 +10,8 @@ public class SessionManager(string roomId)
     // TODO: get the id with a webhook
     // TODO: check the 'lifecycle' of the input var Ref: CS9124
     private readonly string _roomId = roomId;
+    public Task? WorkerTask;
+    public CancellationTokenSource CancellationSource = new CancellationTokenSource();
 
     private static bool IsAudioPub(Rtc.TrackPublication publication)
     {
@@ -36,7 +34,14 @@ public class SessionManager(string roomId)
         return true;
     }
 
-    public async Task RunAsync()
+    public async Task<Task> RunAsync()
+    {
+        // Wrapper to keep a reference the task on the manager
+        WorkerTask = RunWorkerAsync(CancellationSource.Token);
+        return WorkerTask;
+    }
+
+    private async Task RunWorkerAsync(CancellationToken ct)
     {
         // TODO: Recovery. Restart executor on error if track still exists;
 
@@ -91,6 +96,7 @@ public class SessionManager(string roomId)
 
         roomRtc.TrackSubscribed += (sender, e) =>
         {
+            // TODO: check cancellation token need
             var exec = new Executor(roomRtc, e.Participant, e.Track);
             var execTask = exec.RunAsync();
             Console.WriteLine($"Starting executor for track {e.Track.Sid}");
@@ -101,6 +107,7 @@ public class SessionManager(string roomId)
         {
             // Console.WriteLine("I am Running!!! Waiting for tasks");
             // await Task.Delay(5000);
+
             await Task.WhenAll(executorTasks);
         }
         // TODO: Define errors

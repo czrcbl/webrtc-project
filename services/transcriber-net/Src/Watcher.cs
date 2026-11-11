@@ -1,16 +1,19 @@
-using LiveKit.Rtc;
-
+using System.Collections.Concurrent;
 
 /// <summary>
 /// Watches for new rooms on the livekit server.
 /// Spawn a session manager for each room
 /// </summary>
+
 public static class Watcher
 {
     // Add a proper Webhook with ASP net later
 
     private static HashSet<string> _registeredRooms = new HashSet<string>();
-    private static readonly List<Task> _sessions = new List<Task>();
+    // TODO: review ConcurrentDictionary need
+    private static readonly ConcurrentDictionary<string, SessionManager> _sessions = new ConcurrentDictionary<string, SessionManager>();
+
+
 
 
     public static async Task RoomWatcherAsync()
@@ -35,8 +38,18 @@ public static class Watcher
                 Console.WriteLine($"Starting Session for Room {r}");
                 var session = new SessionManager(r);
                 var t = session.RunAsync();
-                _sessions.Add(t);
+                _sessions[r] = session;
             }
+
+            foreach (var r in goneRooms)
+            {
+                if (_sessions.ContainsKey(r))
+                {
+                    _sessions[r].CancellationSource.Cancel();
+                    _sessions.TryRemove(r, out _);
+                }
+            }
+
             _registeredRooms = currentRooms;
             await Task.Delay(2000);
         }
@@ -45,7 +58,6 @@ public static class Watcher
     public static async Task RunAsync()
     {
         var watcher = RoomWatcherAsync();
-        _sessions.Add(watcher);
-        await Task.WhenAll(_sessions);
+        await watcher;
     }
 }
