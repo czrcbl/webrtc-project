@@ -1,18 +1,22 @@
+using LiveKit.Rtc;
+
 using Deepgram;
 using Deepgram.Clients.Agent.v2.WebSocket;
 using Deepgram.Models.Listen.v2.WebSocket;
 // using Deepgram.Models.Speak.v2.WebSocket;
 // using Deepgram.Models.Agent.v2.WebSocket;
 
-
-// Initialize Library with default logging
-// Library.Initialize();
-
 public class DeepgramService
 {
+
+    private AudioStream _stream;
     private ListenWebSocketClient _liveClient = (ListenWebSocketClient)ClientFactory.CreateListenWebSocketClient();
 
-    public DeepgramService() { }
+    public DeepgramService(AudioStream stream)
+    {
+        _stream = stream;
+    }
+
     // private void ConsoleCallback(EventSourcesender, e)
     // {
     //     if (!string.IsNullOrEmpty(e.Channel.Alternatives[0].Transcript))
@@ -21,6 +25,8 @@ public class DeepgramService
     //     }
     // }
 
+
+    // Based on Example code on the SDk
     public async Task StartAsync()
     {
         await _liveClient.Subscribe(
@@ -51,6 +57,17 @@ public class DeepgramService
             Features = new Dictionary<string, bool> { ["numerals"] = true },
         });
 
+    }
+
+    public async Task RunAsync()
+    {
+        await StartAsync();
+        await foreach (var chunk in _stream)
+        {
+            // Console.Write($"{chunk.Frame.DataArray.Length}");
+
+        }
+        await StopAsync();
     }
 
     public void Send(byte[] audioData)

@@ -1,3 +1,5 @@
+using System.Threading.Channels;
+
 using LiveKit.Rtc;
 
 public class Executor(Room room, Participant participant, Track track)
@@ -10,14 +12,14 @@ public class Executor(Room room, Participant participant, Track track)
 
     public async Task RunAsync()
     {
+
+        // Channel<byte[]> audioStream = Channel.CreateUnbounded<byte[]>();
+        // For a single consumer, keep the original stream
         var stream = new AudioStream(_track, Configs.sampleRate, Configs.numChannels);
-        var deepgramService = new DeepgramService();
+
+        var deepgramService = new DeepgramService(stream);
+
         await deepgramService.StartAsync();
-        await foreach (var chunk in stream)
-        {
-            // Console.Write($"{chunk.Frame.DataArray.Length}");
-            deepgramService.Send(chunk.Frame.DataBytes);
-        }
-        await deepgramService.StopAsync();
+
     }
 }
