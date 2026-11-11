@@ -3,8 +3,8 @@ using System.Net;
 public static class Configs
 // TODO: could be done if a record type? 
 {
-    public static string LIVEKIT_API_KEY { get; set; } = GetEnvRequired("LIVEKIT_API_KEY");
-    public static string LIVEKIT_API_SECRET { get; set; } = GetEnvRequired("LIVEKIT_API_SECRET");
+    public static string liveKitApiKey { get; set; } = GetEnvRequired("LIVEKIT_API_KEY");
+    public static string liveKitApiSecret { get; set; } = GetEnvRequired("LIVEKIT_API_SECRET");
 
     public static string liveKitUrl = GetEnvRequired("LIVEKIT_URL");
     public static string listenerIdentity = "listener";
