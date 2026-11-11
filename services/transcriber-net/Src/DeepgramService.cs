@@ -1,5 +1,7 @@
 using LiveKit.Rtc;
 
+using System.Threading.Channels;
+
 using Deepgram;
 using Deepgram.Clients.Agent.v2.WebSocket;
 using Deepgram.Models.Listen.v2.WebSocket;
@@ -10,11 +12,13 @@ public class DeepgramService
 {
 
     private AudioStream _stream;
+    private Channel<string> _transcriptCh;
     private ListenWebSocketClient _liveClient = (ListenWebSocketClient)ClientFactory.CreateListenWebSocketClient();
 
-    public DeepgramService(AudioStream stream)
+    public DeepgramService(AudioStream stream, Channel<string> transcriptChannel)
     {
         _stream = stream;
+        _transcriptCh = transcriptChannel;
     }
 
     // private void ConsoleCallback(EventSourcesender, e)
@@ -27,6 +31,8 @@ public class DeepgramService
 
 
     // Based on Example code on the SDk
+
+    // Review this pattern
     public async Task StartAsync()
     {
         await _liveClient.Subscribe(
@@ -37,7 +43,8 @@ public class DeepgramService
         if (alternatives is not null)
         {
             var msg = alternatives.First().Transcript;
-            Console.Error.Write($"{msg} ");
+            Console.WriteLine($"{msg}");
+            _transcriptCh.Writer.TryWrite(msg);
         }
 
     }));
