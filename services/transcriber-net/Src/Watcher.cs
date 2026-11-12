@@ -5,19 +5,32 @@ using System.Collections.Concurrent;
 /// Spawn a session manager for each room
 /// </summary>
 
-public static class Watcher
+// TODO: Move the Watcher logic inside it?
+public class WatcherService(Watcher watcher) : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        return watcher.RunAsync(stoppingToken);
+    }
+}
+
+public class Watcher
 {
     // Add a proper Webhook with ASP net later
 
-    private static HashSet<string> _registeredRooms = new HashSet<string>();
+    private HashSet<string> _registeredRooms = new HashSet<string>();
     // TODO: review ConcurrentDictionary need
-    private static readonly ConcurrentDictionary<string, SessionManager> _sessions = new ConcurrentDictionary<string, SessionManager>();
+    private readonly ConcurrentDictionary<string, SessionManager> _sessions = new ConcurrentDictionary<string, SessionManager>();
 
-    public static async Task RoomWatcherAsync()
+    public string[] GetRoomIds()
+    {
+        return _registeredRooms.ToArray();
+    }
+    public async Task RoomWatcherAsync(CancellationToken cancellationToken)
     {
 
         // Non hook watch. Still useful for when the Transcriber is started and Rooms already exist
-        while (true)
+        while (!cancellationToken.IsCancellationRequested)
         {
             var roomNames = await LiveKitUtils.GetRoomsAsync();
             var currentRooms = roomNames.ToHashSet();
@@ -52,9 +65,10 @@ public static class Watcher
         }
     }
 
-    public static async Task RunAsync()
+    public async Task RunAsync(CancellationToken cancellationToken)
     {
-        var watcher = RoomWatcherAsync();
+        var watcher = RoomWatcherAsync(cancellationToken);
         await watcher;
     }
+
 }

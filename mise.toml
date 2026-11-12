@@ -72,3 +72,7 @@ run = "STT_LANGUAGE=en DEEPGRAM_LANGUAGE=en uv run services/transcriber/server.p
 [tasks.multi-sample]
 description = "Join N fake speakers publishing speech: [--turns] [ROOM] [SPEAKERS] [LOOPS]"
 run = "bash scripts/run_multi_sample.sh"
+
+[tasks.net-transcriber-dev]
+description = "Run the .NET transcriber in development mode (watch: hot reload, auto rebuild + restart)"
+run = "DOTNET_USE_POLLING_FILE_WATCHER=1 ASPNETCORE_ENVIRONMENT=Development DOTNET_ENVIRONMENT=Development dotnet watch --project services/transcriber-net --non-interactive run"
