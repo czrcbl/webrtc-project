@@ -1,7 +1,15 @@
-   {
-     "[csharp]": {
-       "editor.defaultFormatter": "ms-dotnettools.csharp",
-       "editor.formatOnSave": true,
-       "editor.acceptSuggestionOnCommitCharacter": false
-     }
-   }
+{
+  "[csharp]": {
+    "editor.defaultFormatter": "ms-dotnettools.csharp",
+    "editor.formatOnSave": true,
+    "editor.acceptSuggestionOnCommitCharacter": false
+  },
+
+  // Disable GitHub Copilot in this workspace
+  "chat.disableAIFeatures": true,
+  "github.copilot.enable": {
+    "*": false
+  },
+  "github.copilot.nextEditSuggestions.enabled": false,
+  
+}
