@@ -1,24 +1,37 @@
-﻿/* Application lifecycle, check latter
+﻿using Livekit.Server.Sdk.Dotnet;
+/* Application lifecycle, check latter
 Microsoft.Extensions.Hosting
 Also, ASP.net equivalent.
 */
 
 public static class Program
 {
-    // public static async Task Main(string[] args)
-    // {
-    // Console.WriteLine("Starting Program");
 
-    // string roomId = args.Length == 1 ? args[0] : await SessionManager.GetSingleRoomAsync();
-    // var manager = new SessionManager(roomId);
-    // await manager.RunAsync();
-    // await Watcher.RunAsync();
-    // }
-
-    private static async Task<string> HookCallBack()
+    private static void RegisterWebhook(WebApplication app)
     {
-        Console.WriteLine("Api Reached");
-        return "Hello, World!";
+        app.MapGet("/v1/sessions",
+        (Watcher w) => w.GetRoomIds());
+
+        var receiver = new WebhookReceiver(Configs.liveKitApiKey, Configs.liveKitApiSecret);
+
+        // ASP.NET Core minimal API. Pass the raw body: LiveKit signs its SHA-256.
+        app.MapPost("/livekit/webhook", async (HttpRequest request, Watcher w) =>
+        {
+            using var body = new MemoryStream();
+            await request.Body.CopyToAsync(body);
+
+            WebhookEvent webhookEvent = receiver.Receive(
+                body.ToArray(),
+                request.Headers.Authorization.ToString()
+            );
+
+            Console.WriteLine($"{webhookEvent.Event} in room {webhookEvent.Room?.Name}");
+            if (webhookEvent.Event == "room_started")
+            {
+                await w.StartSessionFromHookAsync(webhookEvent.Room?.Name);
+            }
+
+        });
     }
 
     public static async Task Main(string[] args)
@@ -30,6 +43,14 @@ public static class Program
 
         builder.Services.AddSingleton<Watcher>();
         builder.Services.AddHostedService<WatcherService>();
+
+        // Single config for whole app for now
+        // Check options injection later
+        // builder.Services
+        //     .AddOptions<Configs>()
+        //     .Bind(builder.Configuration)
+        //     .ValidateDataAnnotations()
+        //     .ValidateOnStart();
 
         var app = builder.Build();
 
@@ -48,11 +69,9 @@ public static class Program
 
         app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
-        app.MapGet("/v1/livekit/room-hook",
-            HookCallBack);
+        if (Configs.WeebHookEnabled)
+            RegisterWebhook(app);
 
-        app.MapGet("/v1/livekit/sessions",
-            (Watcher w) => w.GetRoomIds());
 
         app.Run();
     }

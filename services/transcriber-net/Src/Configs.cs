@@ -13,6 +13,8 @@ public static class Configs
     public static uint sampleRate = 16_000;
     public static uint numChannels = 1;
 
+    public static bool WeebHookEnabled = true;
+
     static string GetEnvRequired(string varName)
     {
         return Environment.GetEnvironmentVariable(varName)

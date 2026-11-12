@@ -16,8 +16,6 @@ public class WatcherService(Watcher watcher) : BackgroundService
 
 public class Watcher
 {
-    // Add a proper Webhook with ASP net later
-
     private HashSet<string> _registeredRooms = new HashSet<string>();
     // TODO: review ConcurrentDictionary need
     private readonly ConcurrentDictionary<string, SessionManager> _sessions = new ConcurrentDictionary<string, SessionManager>();
@@ -26,6 +24,32 @@ public class Watcher
     {
         return _registeredRooms.ToArray();
     }
+
+    public async Task StartSessionFromHookAsync(string roomName)
+    {
+        CreateSession(roomName);
+    }
+
+    public void CreateSession(string roomName)
+    {
+        if (!_sessions.ContainsKey(roomName))
+        {
+            Console.WriteLine($"Starting Session for Room {roomName}");
+            var session = new SessionManager(roomName);
+            var _ = session.RunAsync();
+            _sessions[roomName] = session;
+        }
+    }
+    public bool CancelSession(string roomId)
+    {
+        if (_sessions.ContainsKey(roomId))
+        {
+            _sessions[roomId].CancellationSource.Cancel();
+            return _sessions.TryRemove(roomId, out _);
+        }
+        return false;
+    }
+
     public async Task RoomWatcherAsync(CancellationToken cancellationToken)
     {
 
@@ -43,25 +67,23 @@ public class Watcher
 
             Console.WriteLine($"Current Rooms: {string.Join(", ", currentRooms)}");
 
-            foreach (var r in newRooms)
+            if (!Configs.WeebHookEnabled)
             {
-                Console.WriteLine($"Starting Session for Room {r}");
-                var session = new SessionManager(r);
-                var t = session.RunAsync();
-                _sessions[r] = session;
-            }
-
-            foreach (var r in goneRooms)
-            {
-                if (_sessions.ContainsKey(r))
+                foreach (var r in newRooms)
                 {
-                    _sessions[r].CancellationSource.Cancel();
-                    _sessions.TryRemove(r, out _);
+
+                    CreateSession(r);
                 }
             }
-
+            foreach (var r in goneRooms)
+            {
+                if (CancelSession(r))
+                    Console.WriteLine($"Session {r} cancelled.");
+                else
+                    Console.WriteLine($"Unable to cancel {r}.");
+            }
             _registeredRooms = currentRooms;
-            await Task.Delay(2000);
+            await Task.Delay(2000, cancellationToken);
         }
     }
 
