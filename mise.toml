@@ -43,7 +43,7 @@ mkdir -p repos bin
 
 [tasks.server-dev]
 description = "Run Livekit Server"
-run = "./repos/livekit/bin/livekit-server --dev  --keys \"devkey: $LIVEKIT_API_SECRET\""  # --dev: Set up the api key and secret for the values o env
+run = "./repos/livekit/bin/livekit-server --dev  --keys \"devkey: $LIVEKIT_API_SECRET\" livekit-server --config configs/livekit.yaml"  # --dev: Set up the api key and secret for the values o env
 
 [tasks.meet-dev]
 description = "Run Meet server"
