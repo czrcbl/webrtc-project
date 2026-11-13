@@ -1,10 +1,13 @@
 using System.Threading.Channels;
-
 using LiveKit.Rtc;
 
-
 // TODO: Review, use arg or class or constructor
-public class BridgeService(Room room, Participant participant, Track track, Channel<TranscriptionMessage> transcriptionCh)
+public class BridgeService(
+    Room room,
+    Participant participant,
+    Track track,
+    Channel<TranscriptionMessage> transcriptionCh
+)
 {
     private Room _room = room;
     private Participant _participant = participant;
@@ -21,10 +24,16 @@ public class BridgeService(Room room, Participant participant, Track track, Chan
             {
                 var msg = await _transcriptCh.Reader.ReadAsync();
                 var writer = await _room.LocalParticipant.StreamTextAsync(
-                "lk.transcription",
+                    "lk.transcription",
                     new Dictionary<string, string>
-                    { ["lk.transcribed_track_id"] = _track.Sid, ["lk.transcript_final"] = msg.IsFinal ? "true" : "false" },
-                    null, null, _participant.Identity);
+                    {
+                        ["lk.transcribed_track_id"] = _track.Sid,
+                        ["lk.transcript_final"] = msg.IsFinal ? "true" : "false",
+                    },
+                    null,
+                    null,
+                    _participant.Identity
+                );
 
                 Console.WriteLine($"Bridge: message received {msg.Text}, final? {msg.IsFinal}");
 
@@ -38,16 +47,15 @@ public class BridgeService(Room room, Participant participant, Track track, Chan
                 break;
             }
         }
-
     }
 }
+
 public class Executor(Room room, Participant participant, Track track)
 {
     private Room _room = room;
     private Participant _participant = participant;
 
     private Track _track = track;
-
 
     public async Task RunAsync()
     {
@@ -63,11 +71,9 @@ public class Executor(Room room, Participant participant, Track track)
 
         await deepgramService.StartAsync();
 
-
         var deept = deepgramService.RunAsync();
         var bridget = bridgeService.RunAsync();
 
         Task.WaitAll([deept, bridget]);
-
     }
 }

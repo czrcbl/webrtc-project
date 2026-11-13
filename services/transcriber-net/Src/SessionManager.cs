@@ -49,7 +49,6 @@ public class SessionManager(string roomId)
 
         // Add callback pattern
         roomRtc.TrackPublished += (sender, e) =>
-
         {
             if (IsAudioPub(e.Publication))
             {
@@ -86,7 +85,7 @@ public class SessionManager(string roomId)
         await roomRtc.ConnectAsync(
             Configs.liveKitUrl,
             token,
-            new Rtc.RoomOptions { AutoSubscribe = false }  // Check wether it's audio
+            new Rtc.RoomOptions { AutoSubscribe = false } // Check wether it's audio
         );
 
         Console.WriteLine("Room connected");
@@ -101,7 +100,6 @@ public class SessionManager(string roomId)
                 // Check this pattern
                 if (trackPub is Rtc.RemoteTrackPublication remote)
                 {
-
                     Console.WriteLine("Remote Track found");
                     SubscribeIfAudio(remote);
                 }

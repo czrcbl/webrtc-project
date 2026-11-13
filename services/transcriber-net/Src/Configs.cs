@@ -1,7 +1,7 @@
 using System.Net;
 
 public static class Configs
-// TODO: could be done if a record type? 
+// TODO: could be done if a record type?
 {
     public static string liveKitApiKey { get; set; } = GetEnvRequired("LIVEKIT_API_KEY");
     public static string liveKitApiSecret { get; set; } = GetEnvRequired("LIVEKIT_API_SECRET");

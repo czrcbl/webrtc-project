@@ -1,4 +1,5 @@
 ﻿using Livekit.Server.Sdk.Dotnet;
+
 /* Application lifecycle, check latter
 Microsoft.Extensions.Hosting
 Also, ASP.net equivalent.
@@ -6,11 +7,9 @@ Also, ASP.net equivalent.
 
 public static class Program
 {
-
     private static void RegisterWebhook(WebApplication app)
     {
-        app.MapGet("/v1/sessions",
-        (Watcher w) => w.GetRoomIds());
+        app.MapGet("/v1/sessions", (Watcher w) => w.GetRoomIds());
 
         var receiver = new WebhookReceiver(Configs.liveKitApiKey, Configs.liveKitApiSecret);
 
@@ -33,13 +32,11 @@ public static class Program
                 else
                     Console.Error.WriteLine($"Room name is null on `room_started` event");
             }
-
         });
     }
 
     public static async Task Main(string[] args)
     {
-
         var builder = WebApplication.CreateBuilder(args);
 
         builder.WebHost.UseUrls("http://localhost:5000");
@@ -75,9 +72,6 @@ public static class Program
         if (Configs.WeebHookEnabled)
             RegisterWebhook(app);
 
-
         app.Run();
     }
-
 }
-

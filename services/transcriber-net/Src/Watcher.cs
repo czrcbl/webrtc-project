@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 /// Watches for new rooms on the livekit server.
 /// Spawn a session manager for each room
 /// </summary>
-
 // TODO: Move the Watcher logic inside it?
 public class WatcherService(Watcher watcher) : BackgroundService
 {
@@ -17,8 +16,10 @@ public class WatcherService(Watcher watcher) : BackgroundService
 public class Watcher
 {
     private HashSet<string> _registeredRooms = new HashSet<string>();
+
     // TODO: review ConcurrentDictionary need
-    private readonly ConcurrentDictionary<string, SessionManager> _sessions = new ConcurrentDictionary<string, SessionManager>();
+    private readonly ConcurrentDictionary<string, SessionManager> _sessions =
+        new ConcurrentDictionary<string, SessionManager>();
 
     public string[] GetRoomIds()
     {
@@ -40,6 +41,7 @@ public class Watcher
             _sessions[roomName] = session;
         }
     }
+
     public bool CancelSession(string roomId)
     {
         if (_sessions.ContainsKey(roomId))
@@ -52,7 +54,6 @@ public class Watcher
 
     public async Task RoomWatcherAsync(CancellationToken cancellationToken)
     {
-
         // Non hook watch. Still useful for when the Transcriber is started and Rooms already exist
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -71,7 +72,6 @@ public class Watcher
             {
                 foreach (var r in newRooms)
                 {
-
                     CreateSession(r);
                 }
             }
@@ -92,5 +92,4 @@ public class Watcher
         var watcher = RoomWatcherAsync(cancellationToken);
         await watcher;
     }
-
 }
