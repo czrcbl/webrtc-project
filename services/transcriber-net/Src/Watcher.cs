@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 
+using Microsoft.Extensions.Options;
+
 /// <summary>
 /// Watches for new rooms on the livekit server.
 /// Spawn a session manager for each room
@@ -14,7 +16,7 @@ public class WatcherService(Watcher watcher) : BackgroundService
     }
 }
 
-public class Watcher
+public class Watcher(IOptions<AppOptions> options)
 {
     private HashSet<string> _registeredRooms = new HashSet<string>();
     // TODO: review ConcurrentDictionary need
@@ -27,6 +29,7 @@ public class Watcher
 
     public async Task StartSessionFromHookAsync(string roomName)
     {
+        Console.WriteLine($"Watcher: Starting room from hook {roomName}");
         CreateSession(roomName);
     }
 
@@ -35,7 +38,7 @@ public class Watcher
         if (!_sessions.ContainsKey(roomName))
         {
             Console.WriteLine($"Starting Session for Room {roomName}");
-            var session = new SessionManager(roomName);
+            var session = new SessionManager(roomName, options.Value);
             var _ = session.RunAsync();
             _sessions[roomName] = session;
         }
@@ -67,7 +70,7 @@ public class Watcher
 
             Console.WriteLine($"Current Rooms: {string.Join(", ", currentRooms)}");
 
-            if (!Configs.WeebHookEnabled)
+            if (!options.Value.WebHookEnabled)
             {
                 foreach (var r in newRooms)
                 {

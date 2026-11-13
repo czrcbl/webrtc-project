@@ -5,7 +5,7 @@ using Rtc = LiveKit.Rtc;
 /// Watches for existing and new published audio tracks
 /// </summary>
 /// <param name="roomId"></param>
-public class SessionManager(string roomId)
+public class SessionManager(string roomId, AppOptions options)
 {
     // TODO: get the id with a webhook
     // TODO: check the 'lifecycle' of the input var Ref: CS9124
@@ -84,7 +84,7 @@ public class SessionManager(string roomId)
         var roomRtc = new Rtc.Room();
         var token = LiveKitUtils.MintAgentToken(_roomId);
         await roomRtc.ConnectAsync(
-            Configs.liveKitUrl,
+            options.liveKitUrl,
             token,
             new Rtc.RoomOptions { AutoSubscribe = false }  // Check wether it's audio
         );
@@ -110,7 +110,7 @@ public class SessionManager(string roomId)
 
         try
         {
-            while (_executorTasks.Count > 0 && !CancellationSource.Token.IsCancellationRequested)
+            while (!CancellationSource.Token.IsCancellationRequested)
                 await Task.WhenAll(_executorTasks);
         }
         // TODO: Define errors

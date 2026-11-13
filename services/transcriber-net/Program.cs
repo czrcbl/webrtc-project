@@ -1,4 +1,6 @@
 ﻿using Livekit.Server.Sdk.Dotnet;
+
+using Microsoft.Extensions.Options;
 /* Application lifecycle, check latter
 Microsoft.Extensions.Hosting
 Also, ASP.net equivalent.
@@ -9,8 +11,6 @@ public static class Program
 
     private static void RegisterWebhook(WebApplication app)
     {
-        app.MapGet("/v1/sessions",
-        (Watcher w) => w.GetRoomIds());
 
         var receiver = new WebhookReceiver(Configs.liveKitApiKey, Configs.liveKitApiSecret);
 
@@ -44,9 +44,6 @@ public static class Program
 
         builder.WebHost.UseUrls("http://localhost:5000");
 
-        builder.Services.AddSingleton<Watcher>();
-        builder.Services.AddHostedService<WatcherService>();
-
         // Single config for whole app for now
         // Check options injection later
         // builder.Services
@@ -54,6 +51,15 @@ public static class Program
         //     .Bind(builder.Configuration)
         //     .ValidateDataAnnotations()
         //     .ValidateOnStart();
+
+        builder.Services.AddOptions<AppOptions>()
+            .BindConfiguration("");  // No prefix for compatibility
+
+        builder.Services.AddSingleton<Watcher>();
+        builder.Services.AddHostedService<WatcherService>();
+
+
+
 
         var app = builder.Build();
 
@@ -72,8 +78,11 @@ public static class Program
 
         app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
-        if (Configs.WeebHookEnabled)
-            RegisterWebhook(app);
+        app.MapGet("/v1/sessions",
+            (Watcher w) => w.GetRoomIds());
+
+
+        RegisterWebhook(app);
 
 
         app.Run();
