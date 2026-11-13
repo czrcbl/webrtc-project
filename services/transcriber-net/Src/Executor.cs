@@ -4,27 +4,42 @@ using LiveKit.Rtc;
 
 
 // TODO: Review, use arg or class or constructor
-public class BridgeService(Room room, Participant participant, Channel<string> transcriptionCh)
+public class BridgeService(Room room, Participant participant, Track track, Channel<TranscriptionMessage> transcriptionCh)
 {
     private Room _room = room;
     private Participant _participant = participant;
 
-    private Channel<string> _transcriptCh = transcriptionCh;
+    private Track _track = track;
+
+    private Channel<TranscriptionMessage> _transcriptCh = transcriptionCh;
 
     public async Task RunAsync()
     {
         while (true)
         {
-            var msg = await _transcriptCh.Reader.ReadAsync();
-            Console.WriteLine($"Bridge: message received {msg}");
-            await _room.LocalParticipant.SendTextAsync(
-                msg, "lk.transcription");
-            // new Dictionary<string, bool> { ["numerals"] = true },
+            try
+            {
+                var msg = await _transcriptCh.Reader.ReadAsync();
+                var writer = await _room.LocalParticipant.StreamTextAsync(
+                "lk.transcription",
+                    new Dictionary<string, string>
+                    { ["lk.transcribed_track_id"] = _track.Sid, ["lk.transcript_final"] = msg.IsFinal ? "true" : "false" },
+                    null, null, _participant.Identity);
+
+                Console.WriteLine($"Bridge: message received {msg.Text}, final? {msg.IsFinal}");
+
+                // new Dictionary<string, bool> { ["numerals"] = true },
+                await writer.WriteAsync(msg.Text);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("Bridge: Error writing msg");
+
+                break;
+            }
         }
 
     }
-
-
 }
 public class Executor(Room room, Participant participant, Track track)
 {
@@ -41,10 +56,10 @@ public class Executor(Room room, Participant participant, Track track)
         // For a single consumer, keep the original stream
         var stream = new AudioStream(_track, Configs.sampleRate, Configs.numChannels);
 
-        Channel<string> transcriptChannel = Channel.CreateUnbounded<string>();
+        var transcriptChannel = Channel.CreateUnbounded<TranscriptionMessage>();
 
         var deepgramService = new DeepgramService(stream, transcriptChannel);
-        var bridgeService = new BridgeService(_room, _participant, transcriptChannel);
+        var bridgeService = new BridgeService(_room, _participant, _track, transcriptChannel);
 
         await deepgramService.StartAsync();
 

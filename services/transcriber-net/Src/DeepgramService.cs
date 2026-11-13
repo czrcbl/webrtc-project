@@ -8,14 +8,16 @@ using Deepgram.Models.Listen.v2.WebSocket;
 // using Deepgram.Models.Speak.v2.WebSocket;
 // using Deepgram.Models.Agent.v2.WebSocket;
 
+public record TranscriptionMessage(string Text, bool IsFinal);
 public class DeepgramService
 {
 
     private AudioStream _stream;
-    private Channel<string> _transcriptCh;
+    private Channel<TranscriptionMessage> _transcriptCh;
     private ListenWebSocketClient _liveClient = (ListenWebSocketClient)ClientFactory.CreateListenWebSocketClient();
 
-    public DeepgramService(AudioStream stream, Channel<string> transcriptChannel)
+
+    public DeepgramService(AudioStream stream, Channel<TranscriptionMessage> transcriptChannel)
     {
         _stream = stream;
         _transcriptCh = transcriptChannel;
@@ -29,9 +31,7 @@ public class DeepgramService
     //     }
     // }
 
-
     // Based on Example code on the SDk
-
     // Review this pattern
     public async Task StartAsync()
     {
@@ -42,9 +42,10 @@ public class DeepgramService
         var alternatives = e.Channel?.Alternatives;
         if (alternatives is not null)
         {
-            var msg = alternatives.First().Transcript;
-            Console.WriteLine($"{msg}");
-            _transcriptCh.Writer.TryWrite(msg);
+            var text = alternatives.First().Transcript;
+            Console.WriteLine($"{text}");
+            var message = new TranscriptionMessage(text, e.IsFinal ?? false);
+            _transcriptCh.Writer.TryWrite(message);
         }
 
     }));
