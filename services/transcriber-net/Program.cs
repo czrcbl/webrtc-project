@@ -28,7 +28,10 @@ public static class Program
             Console.WriteLine($"{webhookEvent.Event} in room {webhookEvent.Room?.Name}");
             if (webhookEvent.Event == "room_started")
             {
-                await w.StartSessionFromHookAsync(webhookEvent.Room?.Name);
+                if (webhookEvent.Room is not null)
+                    await w.StartSessionFromHookAsync(webhookEvent.Room.Name);
+                else
+                    Console.Error.WriteLine($"Room name is null on `room_started` event");
             }
 
         });
