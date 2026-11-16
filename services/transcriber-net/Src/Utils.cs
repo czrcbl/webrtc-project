@@ -1,20 +1,16 @@
+using Microsoft.Extensions.Options;
 using Sdk = Livekit.Server.Sdk.Dotnet;
 
 /// <summary>
 /// Collection of LiveKit related utilities
 /// </summary>
-public class LiveKitSdkUtils
+public class LiveKitSdkUtils(IOptions<LiveKitOptions> op)
 {
-    private Sdk.RoomServiceClient _client;
-
-    public LiveKitSdkUtils()
-    {
-        _client = new Sdk.RoomServiceClient(
-            Configs.liveKitUrl,
-            Configs.liveKitApiKey,
-            Configs.liveKitApiSecret
-        );
-    }
+    private readonly Sdk.RoomServiceClient _client = new(
+        op.Value.LiveKitUrl,
+        op.Value.LiveKitApiKey,
+        op.Value.LiveKitApiSecret
+    );
 
     public string MintAgentToken(string roomName)
     {

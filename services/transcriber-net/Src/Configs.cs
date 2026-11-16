@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using Microsoft.Extensions.Options;
 
@@ -23,18 +24,14 @@ public static class Configs
     }
 }
 
-public class AppOptions
-// TODO: could be done if a record type?
+public class LiveKitOptions
 {
-    public required string liveKitApiKey { get; set; }
-    public required string liveKitApiSecret { get; set; }
+    [ConfigurationKeyName("LIVEKIT_API_KEY"), Required]
+    public required string LiveKitApiKey { get; init; }
 
-    public required string liveKitUrl { get; set; }
-    public string listenerIdentity { get; } = "listener";
-    public string participantName { get; } = "Listener";
+    [ConfigurationKeyName("LIVEKIT_API_SECRET"), Required]
+    public required string LiveKitApiSecret { get; init; }
 
-    public uint sampleRate { get; } = 16_000;
-    public uint numChannels { get; } = 1;
-
-    public bool WebHookEnabled { get; } = true;
+    [ConfigurationKeyName("LIVEKIT_URL"), Required]
+    public required string LiveKitUrl { get; init; }
 }
