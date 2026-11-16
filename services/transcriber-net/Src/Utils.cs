@@ -28,8 +28,9 @@ public class LiveKitSdkUtils(IOptions<LiveKitOptions> op)
                     Hidden = true,
                 }
             );
-        // .WithAttributes(new Dictionary<string, string> { { "mykey", "myvalue" } })
         // .WithTtl(TimeSpan.FromHours(1));
+        // .WithAttributes(new Dictionary<string, string> { { "mykey", "myvalue" } })
+        //
 
         var jwt = token.ToJwt();
         return jwt;
