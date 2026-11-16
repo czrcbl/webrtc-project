@@ -89,7 +89,6 @@ public class SessionManager(string roomId, LiveKitSdkUtils utils, ILogger<Sessio
     }
 
     private bool SubscribeIfAudio(Rtc.RemoteTrackPublication publication)
-    // TODO: Check why Track is null on the publication object
     {
         logger.LogInformation("Track kind {TrackKind}", publication.Kind);
         if (IsAudioPub(publication))

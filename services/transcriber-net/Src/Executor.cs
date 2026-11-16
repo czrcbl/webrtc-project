@@ -25,7 +25,7 @@ public class BridgeService(
         {
             try
             {
-                var msg = await _transcriptCh.Reader.ReadAsync();
+                var msg = await _transcriptCh.Reader.ReadAsync(_ct);
                 var writer = await _room.LocalParticipant.StreamTextAsync(
                     "lk.transcription",
                     new Dictionary<string, string>
@@ -77,7 +77,7 @@ public class Executor(Room room, Participant participant, Track track, Cancellat
         {
             var deept = deepgramService.RunAsync();
             var bridget = bridgeService.RunAsync();
-            Task.WaitAll([deept, bridget]);
+            await Task.WhenAll(deept, bridget).WaitAsync(_ct);
         }
         catch { }
 
