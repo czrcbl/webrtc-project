@@ -1,16 +1,85 @@
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Options;
 using Rtc = LiveKit.Rtc;
+
+public class SessionRegistry(SessionFactory sessionFactory, ILogger<SessionRegistry> logger)
+{
+    private readonly ConcurrentDictionary<string, SessionManager> _sessions =
+        new ConcurrentDictionary<string, SessionManager>();
+
+    public string[] GetRoomIds()
+    {
+        return _sessions.Keys.ToArray<string>();
+    }
+
+    public async Task LeaveIfRoomEmpty(string roomName)
+    {
+        logger.LogInformation($"room: {roomName}, participant left check");
+        var isEmpty = await _sessions[roomName].DisconnectIfNoRemoteParticipant();
+        if (isEmpty)
+        {
+            _sessions[roomName].CancellationSource.Cancel();
+        }
+    }
+
+    public async Task StartSessionFromHookAsync(string roomName)
+    {
+        logger.LogInformation($"Watcher: Starting room from hook {roomName}");
+        CreateSession(roomName);
+    }
+
+    public void CreateSession(string roomName)
+    {
+        if (!_sessions.ContainsKey(roomName))
+        {
+            Console.WriteLine($"Starting Session for Room {roomName}");
+            var session = sessionFactory.Create(roomName);
+            var _ = session.RunAsync();
+            _sessions[roomName] = session;
+        }
+    }
+
+    public async Task CancelSessionFromHookAsync(string roomName)
+    {
+        logger.LogInformation($"Watcher: Starting room from hook {roomName}");
+        CancelSession(roomName);
+    }
+
+    public bool CancelSession(string roomId)
+    {
+        if (_sessions.ContainsKey(roomId))
+        {
+            _sessions[roomId].CancellationSource.Cancel();
+            return _sessions.TryRemove(roomId, out _);
+        }
+        return false;
+    }
+}
+
+public class SessionFactory(
+    LiveKitSdkUtils utils,
+    ILogger<SessionFactory> logger,
+    IServiceProvider sp
+)
+{
+    public SessionManager Create(string roomId)
+    {
+        // Hadle DI into non registered types
+        return ActivatorUtilities.CreateInstance<SessionManager>(sp, roomId);
+    }
+}
 
 /// <summary>
 /// Manages the connection with a LiveKit server Room
 /// Watches for existing and new published audio tracks
 /// </summary>
 /// <param name="roomId"></param>
-public class SessionManager(string roomId, AppOptions options)
+public class SessionManager(string roomId, LiveKitSdkUtils utils, ILogger<SessionManager> logger)
 {
-    // TODO: get the id with a webhook
-    // TODO: check the 'lifecycle' of the input var Ref: CS9124
     private readonly string _roomId = roomId;
     public Task? WorkerTask;
+
+    private Rtc.Room _roomRtc;
 
     private readonly List<Task> _executorTasks = new List<Task>();
     public CancellationTokenSource CancellationSource = new CancellationTokenSource();
@@ -36,16 +105,27 @@ public class SessionManager(string roomId, AppOptions options)
         return true;
     }
 
+    public async Task<bool> DisconnectIfNoRemoteParticipant()
+    {
+        if (_roomRtc.RemoteParticipants.Count == 0)
+        {
+            await _roomRtc.DisconnectAsync();
+            return true;
+        }
+        return false;
+    }
+
     private void RegisterCallbacks(Rtc.Room roomRtc)
     {
         // Callbacks
 
         // Hidden Agent keeps the room from closing
-        roomRtc.ParticipantDisconnected += async (_, _) =>
-        {
-            if (roomRtc.RemoteParticipants.Count == 0)
-                await roomRtc.DisconnectAsync();
-        };
+        // Triggers on the hook callback
+        // roomRtc.ParticipantDisconnected += async (_, _) =>
+        // {
+        //     if (roomRtc.RemoteParticipants.Count == 0)
+        //         await roomRtc.DisconnectAsync();
+        // };
 
         // Add callback pattern
         roomRtc.TrackPublished += (sender, e) =>
@@ -59,8 +139,7 @@ public class SessionManager(string roomId, AppOptions options)
 
         roomRtc.TrackSubscribed += (sender, e) =>
         {
-            // TODO: check cancellation token need
-            var exec = new Executor(roomRtc, e.Participant, e.Track);
+            var exec = new Executor(roomRtc, e.Participant, e.Track, CancellationSource.Token);
             var execTask = exec.RunAsync();
             Console.WriteLine($"Starting executor for track {e.Track.Sid}");
             _executorTasks.Add(execTask);
@@ -78,21 +157,21 @@ public class SessionManager(string roomId, AppOptions options)
     {
         // TODO: Recovery. Restart executor on error if track still exists;
 
-        Console.WriteLine($"Room ID: {_roomId}");
+        logger.LogInformation($"Room ID: {_roomId}");
 
-        var roomRtc = new Rtc.Room();
-        var token = LiveKitUtils.MintAgentToken(_roomId);
-        await roomRtc.ConnectAsync(
-            options.liveKitUrl,
+        _roomRtc = new Rtc.Room();
+        var token = utils.MintAgentToken(_roomId);
+        await _roomRtc.ConnectAsync(
+            Configs.liveKitUrl,
             token,
             new Rtc.RoomOptions { AutoSubscribe = false } // Check wether it's audio
         );
 
         Console.WriteLine("Room connected");
 
-        RegisterCallbacks(roomRtc);
+        RegisterCallbacks(_roomRtc);
 
-        foreach (var (pId, participant) in roomRtc.RemoteParticipants)
+        foreach (var (pId, participant) in _roomRtc.RemoteParticipants)
         {
             Console.WriteLine($"Participant {pId}");
             foreach (var (tId, trackPub) in participant.TrackPublications)
@@ -109,7 +188,7 @@ public class SessionManager(string roomId, AppOptions options)
         try
         {
             while (!CancellationSource.Token.IsCancellationRequested)
-                await Task.WhenAll(_executorTasks);
+                await Task.WhenAny(_executorTasks);
         }
         // TODO: Define errors
         catch (Exception e)

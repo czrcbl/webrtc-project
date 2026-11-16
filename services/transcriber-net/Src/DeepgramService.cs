@@ -10,22 +10,21 @@ public class DeepgramService
 {
     private AudioStream _stream;
     private Channel<TranscriptionMessage> _transcriptCh;
+
+    private CancellationToken _ct;
     private ListenWebSocketClient _liveClient = (ListenWebSocketClient)
         ClientFactory.CreateListenWebSocketClient();
 
-    public DeepgramService(AudioStream stream, Channel<TranscriptionMessage> transcriptChannel)
+    public DeepgramService(
+        AudioStream stream,
+        Channel<TranscriptionMessage> transcriptChannel,
+        CancellationToken ct
+    )
     {
         _stream = stream;
         _transcriptCh = transcriptChannel;
+        _ct = ct;
     }
-
-    // private void ConsoleCallback(EventSourcesender, e)
-    // {
-    //     if (!string.IsNullOrEmpty(e.Channel.Alternatives[0].Transcript))
-    //     {
-    //         Console.WriteLine($"Transcript: {e.Channel.Alternatives[0].Transcript}");
-    //     }
-    // }
 
     // Based on Example code on the SDk
     // Review this pattern

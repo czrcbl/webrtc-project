@@ -6,7 +6,8 @@ public class BridgeService(
     Room room,
     Participant participant,
     Track track,
-    Channel<TranscriptionMessage> transcriptionCh
+    Channel<TranscriptionMessage> transcriptionCh,
+    CancellationToken ct
 )
 {
     private Room _room = room;
@@ -16,9 +17,11 @@ public class BridgeService(
 
     private Channel<TranscriptionMessage> _transcriptCh = transcriptionCh;
 
+    private CancellationToken _ct = ct;
+
     public async Task RunAsync()
     {
-        while (true)
+        while (!ct.IsCancellationRequested)
         {
             try
             {
@@ -37,25 +40,26 @@ public class BridgeService(
 
                 Console.WriteLine($"Bridge: message received {msg.Text}, final? {msg.IsFinal}");
 
-                // new Dictionary<string, bool> { ["numerals"] = true },
                 await writer.WriteAsync(msg.Text);
+                await writer.CloseAsync();
             }
             catch (Exception e)
             {
                 Console.Error.WriteLine("Bridge: Error writing msg");
-
-                break;
             }
         }
     }
 }
 
-public class Executor(Room room, Participant participant, Track track)
+// TODO: evaluate Factory Pattern
+public class Executor(Room room, Participant participant, Track track, CancellationToken ct)
 {
     private Room _room = room;
     private Participant _participant = participant;
 
     private Track _track = track;
+
+    private CancellationToken _ct = ct;
 
     public async Task RunAsync()
     {
@@ -66,14 +70,18 @@ public class Executor(Room room, Participant participant, Track track)
 
         var transcriptChannel = Channel.CreateUnbounded<TranscriptionMessage>();
 
-        var deepgramService = new DeepgramService(stream, transcriptChannel);
-        var bridgeService = new BridgeService(_room, _participant, _track, transcriptChannel);
+        var deepgramService = new DeepgramService(stream, transcriptChannel, _ct);
+        var bridgeService = new BridgeService(_room, _participant, _track, transcriptChannel, _ct);
 
-        await deepgramService.StartAsync();
+        try
+        {
+            var deept = deepgramService.RunAsync();
+            var bridget = bridgeService.RunAsync();
+            Task.WaitAll([deept, bridget]);
+        }
+        catch { }
 
-        var deept = deepgramService.RunAsync();
-        var bridget = bridgeService.RunAsync();
-
-        Task.WaitAll([deept, bridget]);
+        transcriptChannel.Writer.Complete();
+        stream.Dispose();
     }
 }

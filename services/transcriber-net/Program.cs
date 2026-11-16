@@ -8,30 +8,89 @@ Also, ASP.net equivalent.
 
 public static class Program
 {
-    private static void RegisterWebhook(WebApplication app)
+    static WebhookReceiver _receiver = new WebhookReceiver(
+        Configs.liveKitApiKey,
+        Configs.liveKitApiSecret
+    );
+
+    private static async Task WebhookCallback(HttpRequest request, SessionRegistry sessionReg)
     {
-        var receiver = new WebhookReceiver(Configs.liveKitApiKey, Configs.liveKitApiSecret);
+        using var body = new MemoryStream();
+        await request.Body.CopyToAsync(body);
 
-        // ASP.NET Core minimal API. Pass the raw body: LiveKit signs its SHA-256.
-        app.MapPost("/livekit/webhook", async (HttpRequest request, Watcher w) =>
+        WebhookEvent webhookEvent = _receiver.Receive(
+            body.ToArray(),
+            request.Headers.Authorization.ToString()
+        );
+
+        if (webhookEvent.Room is null)
         {
-            using var body = new MemoryStream();
-            await request.Body.CopyToAsync(body);
+            // TODO: handle properly
+            // logger.LogInformation($"Room name is null");
+            return;
+        }
+        var roomName = webhookEvent.Room.Name;
 
-            WebhookEvent webhookEvent = receiver.Receive(
-                body.ToArray(),
-                request.Headers.Authorization.ToString()
-            );
+        // logger.LogInformation($"{webhookEvent.Event} in room {webhookEvent.Room?.Name}");
+        if (webhookEvent.Event == "room_started")
+        {
+            await sessionReg.StartSessionFromHookAsync(roomName);
+        }
+        else if (webhookEvent.Event == "participant_left")
+        {
+            await sessionReg.LeaveIfRoomEmpty(roomName);
+        }
+        return;
+    }
 
-            Console.WriteLine($"{webhookEvent.Event} in room {webhookEvent.Room?.Name}");
-            if (webhookEvent.Event == "room_started")
+    // private static void RegisterWebhook(WebApplication app)
+    // {
+    //     // ASP.NET Core minimal API. Pass the raw body: LiveKit signs its SHA-256.
+    //     app.MapPost("/livekit/webhook", async (HttpRequest request, SessionRegistry sessionReg) =>
+    //     {
+    //         using var body = new MemoryStream();
+    //         await request.Body.CopyToAsync(body);
+
+    //         WebhookEvent webhookEvent = receiver.Receive(
+    //             body.ToArray(),
+    //             request.Headers.Authorization.ToString()
+    //         );
+
+    //         if (webhookEvent.Room is null)
+    //         {
+    //             // TODO: handle properly
+    //             logger.LogInformation($"Room name is null");
+    //             return;
+    //         }
+    //         var roomName = webhookEvent.Room.Name;
+
+    //         logger.LogInformation($"{webhookEvent.Event} in room {webhookEvent.Room?.Name}");
+    //         if (webhookEvent.Event == "room_started")
+    //         {
+    //             await sessionReg.StartSessionFromHookAsync(roomName);
+    //         }
+    //         else if (webhookEvent.Event == "participant_left")
+    //         {
+    //             await sessionReg.LeaveIfRoomEmpty(roomName);
+    //         }
+    //         return;
+    //     });
+    // }
+
+    public static RouteGroupBuilder LivekitApi(this RouteGroupBuilder group)
+    {
+        group.MapGet("/sessions", (SessionRegistry sessionReg) => sessionReg.GetRoomIds());
+        group.MapGet("/clean-sessions", (SessionRegistry sessionReg) =>
+        {
+            var roomNames = sessionReg.GetRoomIds();
+            foreach (var name in roomNames)
             {
-                if (webhookEvent.Room is not null)
-                    await w.StartSessionFromHookAsync(webhookEvent.Room.Name);
-                else
-                    Console.Error.WriteLine($"Room name is null on `room_started` event");
+                sessionReg.CancelSession(name);
             }
         });
+        group.MapPost("/webhook", WebhookCallback);
+
+        return group;
     }
 
     public static async Task Main(string[] args)
@@ -40,6 +99,7 @@ public static class Program
 
         builder.WebHost.UseUrls("http://localhost:5000");
 
+        // TODO: MIgrate to options using DI
         // Single config for whole app for now
         // Check options injection later
         // builder.Services
@@ -48,10 +108,13 @@ public static class Program
         //     .ValidateDataAnnotations()
         //     .ValidateOnStart();
 
-        builder.Services.AddOptions<AppOptions>().BindConfiguration(""); // No prefix for compatibility
+        // builder.Services.AddOptions<AppOptions>().BindConfiguration(""); // No prefix for compatibility
 
-        builder.Services.AddSingleton<Watcher>();
-        builder.Services.AddHostedService<WatcherService>();
+        // builder.Services.AddSingleton<Watcher>();
+        // builder.Services.AddHostedService<WatcherService>();
+        builder.Services.AddSingleton<SessionRegistry>();
+        builder.Services.AddSingleton<SessionFactory>();
+        builder.Services.AddSingleton<LiveKitSdkUtils>();
 
         var app = builder.Build();
 
@@ -62,18 +125,16 @@ public static class Program
         else
         {
             Console.WriteLine(">>> Running on Production <<<");
-            app.UseExceptionHandler("/Error");
-            // Enforce HTTPS, add header
-            app.UseHsts();
-            app.UseHttpsRedirection();
         }
 
-        app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+        // app.MapGet("/v1/sessions", (SessionRegistry sessionReg) => sessionReg.GetRoomIds());
 
-        app.MapGet("/v1/sessions", (Watcher w) => w.GetRoomIds());
+        // RegisterWebhook(app);
 
-        RegisterWebhook(app);
+        app.MapGroup("/v1/livekit").LivekitApi();
 
         app.Run();
+
+        // var logger = app.Logger;
     }
 }

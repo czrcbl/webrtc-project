@@ -1,4 +1,4 @@
 webhook:
   api_key: "devkey"
   urls:
-    - http://localhost:5000/livekit/webhook
+    - http://localhost:5000/v1/livekit/webhook
