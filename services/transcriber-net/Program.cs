@@ -1,6 +1,6 @@
 ﻿using Livekit.Server.Sdk.Dotnet;
-
 using Microsoft.Extensions.Options;
+
 /* Application lifecycle, check latter
 Microsoft.Extensions.Hosting
 Also, ASP.net equivalent.
@@ -8,10 +8,8 @@ Also, ASP.net equivalent.
 
 public static class Program
 {
-
     private static void RegisterWebhook(WebApplication app)
     {
-
         var receiver = new WebhookReceiver(Configs.liveKitApiKey, Configs.liveKitApiSecret);
 
         // ASP.NET Core minimal API. Pass the raw body: LiveKit signs its SHA-256.
@@ -33,13 +31,11 @@ public static class Program
                 else
                     Console.Error.WriteLine($"Room name is null on `room_started` event");
             }
-
         });
     }
 
     public static async Task Main(string[] args)
     {
-
         var builder = WebApplication.CreateBuilder(args);
 
         builder.WebHost.UseUrls("http://localhost:5000");
@@ -52,14 +48,10 @@ public static class Program
         //     .ValidateDataAnnotations()
         //     .ValidateOnStart();
 
-        builder.Services.AddOptions<AppOptions>()
-            .BindConfiguration("");  // No prefix for compatibility
+        builder.Services.AddOptions<AppOptions>().BindConfiguration(""); // No prefix for compatibility
 
         builder.Services.AddSingleton<Watcher>();
         builder.Services.AddHostedService<WatcherService>();
-
-
-
 
         var app = builder.Build();
 
@@ -78,15 +70,10 @@ public static class Program
 
         app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
-        app.MapGet("/v1/sessions",
-            (Watcher w) => w.GetRoomIds());
-
+        app.MapGet("/v1/sessions", (Watcher w) => w.GetRoomIds());
 
         RegisterWebhook(app);
 
-
         app.Run();
     }
-
 }
-

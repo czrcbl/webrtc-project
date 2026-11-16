@@ -1,21 +1,19 @@
-using LiveKit.Rtc;
-
 using System.Threading.Channels;
-
 using Deepgram;
 using Deepgram.Clients.Agent.v2.WebSocket;
 using Deepgram.Models.Listen.v2.WebSocket;
-// using Deepgram.Models.Speak.v2.WebSocket;
-// using Deepgram.Models.Agent.v2.WebSocket;
+using LiveKit.Rtc;
+
+public record TranscriptionMessage(string Text, bool IsFinal);
 
 public class DeepgramService
 {
-
     private AudioStream _stream;
-    private Channel<string> _transcriptCh;
-    private ListenWebSocketClient _liveClient = (ListenWebSocketClient)ClientFactory.CreateListenWebSocketClient();
+    private Channel<TranscriptionMessage> _transcriptCh;
+    private ListenWebSocketClient _liveClient = (ListenWebSocketClient)
+        ClientFactory.CreateListenWebSocketClient();
 
-    public DeepgramService(AudioStream stream, Channel<string> transcriptChannel)
+    public DeepgramService(AudioStream stream, Channel<TranscriptionMessage> transcriptChannel)
     {
         _stream = stream;
         _transcriptCh = transcriptChannel;
@@ -29,25 +27,26 @@ public class DeepgramService
     //     }
     // }
 
-
     // Based on Example code on the SDk
-
     // Review this pattern
     public async Task StartAsync()
     {
         await _liveClient.Subscribe(
-    new EventHandler<ResultResponse>((sender, e) =>
-    {
-        // Console.Error.WriteLine($"{e.Variant} {e.Code}: {e.Description}");
-        var alternatives = e.Channel?.Alternatives;
-        if (alternatives is not null)
-        {
-            var msg = alternatives.First().Transcript;
-            Console.WriteLine($"{msg}");
-            _transcriptCh.Writer.TryWrite(msg);
-        }
-
-    }));
+            new EventHandler<ResultResponse>(
+                (sender, e) =>
+                {
+                    // Console.Error.WriteLine($"{e.Variant} {e.Code}: {e.Description}");
+                    var alternatives = e.Channel?.Alternatives;
+                    if (alternatives is not null)
+                    {
+                        var text = alternatives.First().Transcript;
+                        Console.WriteLine($"{text}");
+                        var message = new TranscriptionMessage(text, e.IsFinal ?? false);
+                        _transcriptCh.Writer.TryWrite(message);
+                    }
+                }
+            )
+        );
 
         var liveSchema = new LiveSchema()
         {
@@ -55,15 +54,16 @@ public class DeepgramService
             Encoding = "linear16",
             SampleRate = (int)Configs.sampleRate,
             Channels = (int)Configs.numChannels,
-            Language = "pt-BR"
+            Language = "pt-BR",
         };
         await _liveClient.Connect(liveSchema);
-        await _liveClient.SendConfigure(new ConfigureSchema
-        {
-            Keyterms = new List<string> { "Deepgram" },
-            Features = new Dictionary<string, bool> { ["numerals"] = true },
-        });
-
+        await _liveClient.SendConfigure(
+            new ConfigureSchema
+            {
+                Keyterms = new List<string> { "Deepgram" },
+                Features = new Dictionary<string, bool> { ["numerals"] = true },
+            }
+        );
     }
 
     public async Task RunAsync()
@@ -73,7 +73,6 @@ public class DeepgramService
         {
             // Console.Write($"{chunk.Frame.DataArray.Length}");
             Send(chunk.Frame.DataBytes);
-
         }
         await StopAsync();
     }
@@ -87,7 +86,6 @@ public class DeepgramService
     {
         await _liveClient.Stop();
     }
-
 }
 
 // await liveClient.Stop();

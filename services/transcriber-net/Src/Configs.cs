@@ -1,9 +1,8 @@
 using System.Net;
-
 using Microsoft.Extensions.Options;
 
 public static class Configs
-// TODO: could be done if a record type? 
+// TODO: could be done if a record type?
 {
     public static string liveKitApiKey { get; set; } = GetEnvRequired("LIVEKIT_API_KEY");
     public static string liveKitApiSecret { get; set; } = GetEnvRequired("LIVEKIT_API_SECRET");
@@ -24,9 +23,8 @@ public static class Configs
     }
 }
 
-
 public class AppOptions
-// TODO: could be done if a record type? 
+// TODO: could be done if a record type?
 {
     public required string liveKitApiKey { get; set; }
     public required string liveKitApiSecret { get; set; }
@@ -39,6 +37,4 @@ public class AppOptions
     public uint numChannels { get; } = 1;
 
     public bool WebHookEnabled { get; } = true;
-
-
 }
