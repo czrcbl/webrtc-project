@@ -4,9 +4,6 @@ using Deepgram.Clients.Agent.v2.WebSocket;
 using Deepgram.Models.Listen.v2.WebSocket;
 using LiveKit.Rtc;
 
-// using Deepgram.Models.Speak.v2.WebSocket;
-// using Deepgram.Models.Agent.v2.WebSocket;
-
 public record TranscriptionMessage(string Text, bool IsFinal);
 
 public class DeepgramService
