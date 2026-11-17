@@ -1,12 +1,7 @@
 using Deepgram;
-using Deepgram.Clients.Agent.v2.WebSocket;
 using Deepgram.Models.Listen.v2.WebSocket;
 
-public record TranscriptionMessage(string Text, bool IsFinal);
-
-public interface ITranscriberConnector { }
-
-public class DeepGramConnector(ILogger<DeepGramConnector> logger) : ITranscriberConnector
+public class DeepGramTranscriber(ILogger<DeepGramTranscriber> logger) : BaseTranscriber
 {
     public event EventHandler<TranscriptionMessage>? TranscriptReceived;
     LiveSchema _liveSchema = new()

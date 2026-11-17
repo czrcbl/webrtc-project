@@ -70,7 +70,7 @@ public class Executor(
     Participant participant,
     Track track,
     CancellationToken ct,
-    DeepGramConnector transcriber,
+    DeepGramTranscriber transcriber,
     ILogger<Executor> logger
 )
 {

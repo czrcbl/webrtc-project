@@ -1,6 +1,5 @@
 using System.Threading.Channels;
 using Deepgram;
-using Deepgram.Clients.Agent.v2.WebSocket;
 using Deepgram.Models.Listen.v2.WebSocket;
 using LiveKit.Rtc;
 

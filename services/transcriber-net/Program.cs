@@ -95,7 +95,7 @@ public static class Program
         builder.Services.AddSingleton<Factory<Executor>>();
         builder.Services.AddSingleton<LiveKitSdkUtils>();
 
-        builder.Services.AddTransient<DeepGramConnector>();
+        builder.Services.AddTransient<DeepGramTranscriber>();
 
         var app = builder.Build();
 
