@@ -5,6 +5,7 @@
     <RootNamespace>transcriber_net</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)/obj/</BaseIntermediateOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
