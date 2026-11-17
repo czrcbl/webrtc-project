@@ -1,5 +1,4 @@
 ﻿using Livekit.Server.Sdk.Dotnet;
-using Microsoft.Extensions.Options;
 
 /* Application lifecycle, check latter
 Microsoft.Extensions.Hosting
@@ -99,13 +98,15 @@ public static class Program
 
         var app = builder.Build();
 
+        var logger = app.Logger;
+
         if (app.Environment.IsDevelopment())
         {
-            Console.WriteLine(">>> Running on Development <<<");
+            logger.LogInformation(">>> Running on Development <<<");
         }
         else
         {
-            Console.WriteLine(">>> Running on Production <<<");
+            logger.LogInformation(">>> Running on Production <<<");
         }
 
         app.MapGroup("/v1/livekit").LivekitApi();

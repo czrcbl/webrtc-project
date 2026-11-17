@@ -1,15 +1,16 @@
 using Deepgram;
 using Deepgram.Models.Listen.v2.WebSocket;
 
-public class DeepGramTranscriber(ILogger<DeepGramTranscriber> logger) : BaseTranscriber
+public class DeepGramTranscriber(AudioOptions audioOptions, ILogger<DeepGramTranscriber> logger)
+    : BaseTranscriber
 {
     public event EventHandler<TranscriptionMessage>? TranscriptReceived;
     LiveSchema _liveSchema = new()
     {
         Model = "nova-3",
         Encoding = "linear16",
-        SampleRate = (int)Configs.sampleRate,
-        Channels = (int)Configs.numChannels,
+        SampleRate = (int)audioOptions.SampleRate,
+        Channels = (int)audioOptions.NumChannels,
         Language = "pt-BR",
     };
 

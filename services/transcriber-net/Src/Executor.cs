@@ -71,6 +71,7 @@ public class Executor(
     Track track,
     CancellationToken ct,
     DeepGramTranscriber transcriber,
+    AudioOptions audioOptions,
     ILogger<Executor> logger
 )
 {
@@ -93,7 +94,7 @@ public class Executor(
         await transcriber.ConnectClientAsync();
         var bridgeTask = bridgeService.RunAsync();
 
-        var stream = new AudioStream(_track, Configs.sampleRate, Configs.numChannels);
+        var stream = new AudioStream(_track, audioOptions.SampleRate, audioOptions.NumChannels);
         await foreach (var chunk in stream)
         {
             // Console.Write($"{chunk.Frame.DataArray.Length}");
