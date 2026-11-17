@@ -80,13 +80,22 @@ public static class Program
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        builder
+            .Services.AddOptions<AudioOptions>()
+            .BindConfiguration("")
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         // builder.Services.AddOptions<AppOptions>().BindConfiguration(""); // No prefix for compatibility
 
         // builder.Services.AddSingleton<Watcher>();
         // builder.Services.AddHostedService<WatcherService>();
         builder.Services.AddSingleton<SessionRegistry>();
         builder.Services.AddSingleton<SessionFactory>();
+        builder.Services.AddSingleton<Factory<Executor>>();
         builder.Services.AddSingleton<LiveKitSdkUtils>();
+
+        builder.Services.AddTransient<DeepGramConnector>();
 
         var app = builder.Build();
 

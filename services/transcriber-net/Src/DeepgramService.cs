@@ -4,8 +4,6 @@ using Deepgram.Clients.Agent.v2.WebSocket;
 using Deepgram.Models.Listen.v2.WebSocket;
 using LiveKit.Rtc;
 
-public record TranscriptionMessage(string Text, bool IsFinal);
-
 public class DeepgramService
 {
     private AudioStream _stream;

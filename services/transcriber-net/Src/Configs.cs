@@ -1,6 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Net;
-using Microsoft.Extensions.Options;
 
 public static class Configs
 // TODO: could be done if a record type?
@@ -34,4 +32,13 @@ public class LiveKitOptions
 
     [ConfigurationKeyName("LIVEKIT_URL"), Required]
     public required string LiveKitUrl { get; init; }
+}
+
+public class AudioOptions
+{
+    [ConfigurationKeyName("SAMPLE_RATE")]
+    public uint SampleRate { get; init; } = 16_000;
+
+    [ConfigurationKeyName("NUM_CHANNELS")]
+    public uint NumChannels { get; init; } = 1;
 }

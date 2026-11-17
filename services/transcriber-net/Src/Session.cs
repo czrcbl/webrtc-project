@@ -40,22 +40,19 @@ public class SessionRegistry(
     public async Task LeaveIfRoomEmpty(string roomName)
     {
         logger.LogInformation("Room {RoomName}: participant left, checking if empty", roomName);
+
+        if (!_sessions.ContainsKey(roomName))
+        {
+            if (hostEnv.IsDevelopment())
+                logger.LogDebug("Restart this service and LiveKit server");
+            // TODO: dangling Rooms on server cleaning
+            return;
+        }
+
         var isEmpty = await _sessions[roomName].DisconnectIfNoRemoteParticipant();
         if (isEmpty)
         {
-            if (_sessions.ContainsKey(roomName))
-            {
-                _sessions[roomName].CancellationSource.Cancel();
-            }
-            else
-            {
-                logger.LogWarning(
-                    $"Inconsistent state, {roomName} in LiveKit Server no Registered"
-                );
-                if (hostEnv.IsDevelopment())
-                    logger.LogDebug("Restart this service and LiveKit server");
-                // TODO: dangling Rooms on server cleaning
-            }
+            _sessions[roomName].CancellationSource.Cancel();
         }
     }
 
@@ -98,7 +95,12 @@ public class SessionRegistry(
 /// Watches for existing and new published audio tracks
 /// </summary>
 /// <param name="roomId"></param>
-public class SessionManager(string roomId, LiveKitSdkUtils utils, ILogger<SessionManager> logger)
+public class SessionManager(
+    string roomId,
+    LiveKitSdkUtils utils,
+    Factory<Executor> executorFactory,
+    ILogger<SessionManager> logger
+)
 {
     private readonly string _roomId = roomId;
     public Task? WorkerTask;
@@ -157,7 +159,13 @@ public class SessionManager(string roomId, LiveKitSdkUtils utils, ILogger<Sessio
 
         roomRtc.TrackSubscribed += (sender, e) =>
         {
-            var exec = new Executor(roomRtc, e.Participant, e.Track, CancellationSource.Token);
+            // var exec = new Executor(roomRtc, e.Participant, e.Track, CancellationSource.Token);
+            var exec = executorFactory.Create(
+                roomRtc,
+                e.Participant,
+                e.Track,
+                CancellationSource.Token
+            );
             var execTask = exec.RunAsync();
             Console.WriteLine($"Starting executor for track {e.Track.Sid}");
             _executorTasks.Add(execTask);
